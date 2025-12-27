@@ -845,13 +845,9 @@ input:checked + .slider:before {
               <option value="GRBW">GRBW - SK6812 RGBW (most common)</option>
               <option value="RGBW">RGBW - SK6812 RGBW variant</option>
             </optgroup>
-            <optgroup label="RGBCCT Strips (5-channel, dual WS2811)">
-              <option value="GRBWW">GRBWW - Dual WS2811 RGBCCT (most common)</option>
-              <option value="RGBWW">RGBWW - Dual WS2811 RGBCCT variant</option>
-            </optgroup>
           </select>
           <p class="text-xs text-slate-500">
-            Most WS2812B strips use GRB. SK6812 RGBW strips typically use GRBW. RGBCCT dual WS2811 strips typically use GRBWW. If colors appear wrong, try different orders.
+            Most WS2812B strips use GRB. SK6812 RGBW strips typically use GRBW. For RGBCCT dual WS2811 strips, use RGB/GRB/BRG orders and enable "Dual WS2811 RGBCCT Mode" below. If colors appear wrong, try different orders.
           </p>
         </label>
 
