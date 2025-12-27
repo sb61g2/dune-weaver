@@ -108,27 +108,32 @@ class DWLEDController:
             board_pin = pin_map[self.gpio_pin]
 
             # Initialize NeoPixel strip
-            # Note: For 24V COB RGBCCT strips, use standard 3-byte RGB orders (RGB, GRB, BRG)
-            # The library infers bytes_per_pixel from pixel_order string length automatically
-            # Only pass pixel_order that the library recognizes (3 or 4 characters)
+            # For RGBCCT strips: extract RGB order and set bpp=5 to send all 5 bytes
 
-            # Validate and potentially adjust pixel_order
+            # Determine bytes per pixel and pixel order
             pixel_order_to_use = self.pixel_order
+            bpp = None  # Let library auto-detect unless we override
 
-            # If user selected a 5-char order (RGBWW, GRBWW), fall back to 3-char equivalent
-            # Most 24V COB strips use 3-byte RGB format despite having CCT LEDs
             if len(self.pixel_order) >= 5:
-                # Extract first 3 characters for RGB order
+                # RGBCCT/RGBWW: Extract RGB order from first 3 chars, set bpp=5
                 pixel_order_to_use = self.pixel_order[:3]
-                logger.warning(f"5-channel pixel order '{self.pixel_order}' not supported by NeoPixel library. Using '{pixel_order_to_use}' instead.")
+                bpp = 5
+                logger.info(f"5-channel RGBCCT mode: Using pixel order '{pixel_order_to_use}' with bpp=5")
 
-            self._pixels = neopixel.NeoPixel(
-                board_pin,
-                self.num_leds,
-                brightness=self.brightness,
-                auto_write=False,
-                pixel_order=pixel_order_to_use
-            )
+            # Build NeoPixel arguments
+            neopixel_args = {
+                'pin': board_pin,
+                'n': self.num_leds,
+                'brightness': self.brightness,
+                'auto_write': False,
+                'pixel_order': pixel_order_to_use
+            }
+
+            # Add bpp if specified (for RGBCCT 5-channel strips)
+            if bpp is not None:
+                neopixel_args['bpp'] = bpp
+
+            self._pixels = neopixel.NeoPixel(**neopixel_args)
 
             # Create segment for the entire strip
             self._segment = Segment(self._pixels, 0, self.num_leds)
