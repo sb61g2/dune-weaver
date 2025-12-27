@@ -2,6 +2,12 @@
 """
 WLED Color Utilities for Raspberry Pi
 Ported from WLED colors.cpp
+
+Supports RGB, RGBW, and RGBCCT (5-channel) color formats:
+- RGB: 3 channels (Red, Green, Blue)
+- RGBW: 4 channels (Red, Green, Blue, White)
+- RGBCCT: 5 channels (Red, Green, Blue, Warm White, Cool White)
+  For dual WS2811 RGBCCT strips with adjustable color temperature
 """
 import math
 from typing import Tuple
@@ -10,7 +16,7 @@ from typing import Tuple
 
 def color_blend(color1: int, color2: int, blend: int) -> int:
     """
-    Blend two colors together (32-bit WRGB format)
+    Blend two colors together (supports RGBWCW format)
     blend: 0-255 (0 = full color1, 255 = full color2)
     """
     if blend == 0:
@@ -18,35 +24,40 @@ def color_blend(color1: int, color2: int, blend: int) -> int:
     if blend == 255:
         return color2
 
+    cw1 = (color1 >> 32) & 0xFF
     w1 = (color1 >> 24) & 0xFF
     r1 = (color1 >> 16) & 0xFF
     g1 = (color1 >> 8) & 0xFF
     b1 = color1 & 0xFF
 
+    cw2 = (color2 >> 32) & 0xFF
     w2 = (color2 >> 24) & 0xFF
     r2 = (color2 >> 16) & 0xFF
     g2 = (color2 >> 8) & 0xFF
     b2 = color2 & 0xFF
 
+    cw3 = ((cw1 * (255 - blend)) + (cw2 * blend)) // 255
     w3 = ((w1 * (255 - blend)) + (w2 * blend)) // 255
     r3 = ((r1 * (255 - blend)) + (r2 * blend)) // 255
     g3 = ((g1 * (255 - blend)) + (g2 * blend)) // 255
     b3 = ((b1 * (255 - blend)) + (b2 * blend)) // 255
 
-    return (w3 << 24) | (r3 << 16) | (g3 << 8) | b3
+    return (cw3 << 32) | (w3 << 24) | (r3 << 16) | (g3 << 8) | b3
 
 def color_add(c1: int, c2: int, preserve_ratio: bool = False) -> int:
-    """Add two colors together with optional ratio preservation"""
+    """Add two colors together with optional ratio preservation (supports RGBWCW)"""
     if c1 == 0:
         return c2
     if c2 == 0:
         return c1
 
+    cw1 = (c1 >> 32) & 0xFF
     w1 = (c1 >> 24) & 0xFF
     r1 = (c1 >> 16) & 0xFF
     g1 = (c1 >> 8) & 0xFF
     b1 = c1 & 0xFF
 
+    cw2 = (c2 >> 32) & 0xFF
     w2 = (c2 >> 24) & 0xFF
     r2 = (c2 >> 16) & 0xFF
     g2 = (c2 >> 8) & 0xFF
@@ -56,21 +67,23 @@ def color_add(c1: int, c2: int, preserve_ratio: bool = False) -> int:
     g = min(255, g1 + g2)
     b = min(255, b1 + b2)
     w = min(255, w1 + w2)
+    cw = min(255, cw1 + cw2)
 
     if preserve_ratio:
-        max_val = max(r, g, b, w)
+        max_val = max(r, g, b, w, cw)
         if max_val > 255:
             scale = 255.0 / max_val
             r = int(r * scale)
             g = int(g * scale)
             b = int(b * scale)
             w = int(w * scale)
+            cw = int(cw * scale)
 
-    return (w << 24) | (r << 16) | (g << 8) | b
+    return (cw << 32) | (w << 24) | (r << 16) | (g << 8) | b
 
 def color_fade(color: int, amount: int, video: bool = False) -> int:
     """
-    Fade color toward black
+    Fade color toward black (supports RGBWCW)
     amount: 0 (black) to 255 (no fade)
     video: if True, uses "video" scaling (never goes to pure black)
     """
@@ -79,6 +92,7 @@ def color_fade(color: int, amount: int, video: bool = False) -> int:
     if amount == 255:
         return color
 
+    cw = (color >> 32) & 0xFF
     w = (color >> 24) & 0xFF
     r = (color >> 16) & 0xFF
     g = (color >> 8) & 0xFF
@@ -86,18 +100,20 @@ def color_fade(color: int, amount: int, video: bool = False) -> int:
 
     if not video:
         amount += 1
+        cw = (cw * amount) >> 8
         w = (w * amount) >> 8
         r = (r * amount) >> 8
         g = (g * amount) >> 8
         b = (b * amount) >> 8
     else:
         # Video scaling - ensure colors don't go to zero if they started non-zero
+        cw = max(1 if cw else 0, (cw * amount) >> 8)
         w = max(1 if w else 0, (w * amount) >> 8)
         r = max(1 if r else 0, (r * amount) >> 8)
         g = max(1 if g else 0, (g * amount) >> 8)
         b = max(1 if b else 0, (b * amount) >> 8)
 
-    return (w << 24) | (r << 16) | (g << 8) | b
+    return (cw << 32) | (w << 24) | (r << 16) | (g << 8) | b
 
 def wheel(pos: int) -> Tuple[int, int, int]:
     """
@@ -215,12 +231,21 @@ def get_b(color: int) -> int:
     return color & 0xFF
 
 def get_w(color: int) -> int:
-    """Extract white component from 32-bit color"""
+    """Extract warm white component from color"""
     return (color >> 24) & 0xFF
 
-def rgb_to_color(r: int, g: int, b: int, w: int = 0) -> int:
-    """Create 32-bit color from RGBW components"""
-    return (w << 24) | (r << 16) | (g << 8) | b
+def get_cw(color: int) -> int:
+    """Extract cool white component from color (for RGBCCT)"""
+    return (color >> 32) & 0xFF
+
+def rgb_to_color(r: int, g: int, b: int, w: int = 0, cw: int = 0) -> int:
+    """
+    Create color from RGB(W)(CW) components
+    For RGBCCT: stores WW in w parameter, CW in cw parameter
+    Returns 40-bit value packed into int (cw in upper bits)
+    """
+    # Pack: CW (bits 32-39) | W (bits 24-31) | R (bits 16-23) | G (bits 8-15) | B (bits 0-7)
+    return (cw << 32) | (w << 24) | (r << 16) | (g << 8) | b
 
 def color_from_tuple(rgb: Tuple[int, int, int]) -> int:
     """Convert RGB tuple to 32-bit color"""

@@ -11,7 +11,7 @@ Dune Weaver is a web-controlled kinetic sand table system that creates mesmerizi
 - **Web-Based Control Interface**: Modern, responsive web UI for pattern management and table control
 - **Real-Time Pattern Execution**: Live preview and control of pattern drawing with progress tracking
 - **Playlist System**: Queue multiple patterns for continuous execution
-- **WLED Integration**: Synchronized lighting effects during pattern execution
+- **LED Integration**: Synchronized lighting effects with WLED or direct GPIO control (RGB, RGBW, RGBCCT)
 - **Pattern Library**: Browse, upload, and manage custom patterns with preview generation
 - **Polar Coordinate System**: Specialized θ-ρ coordinate system optimized for radial designs
 - **Auto-Update System**: GitHub-integrated version management with update notifications
@@ -121,7 +121,7 @@ The project exposes RESTful APIs for various actions. Here are some key endpoint
    pip install -r requirements-nonrpi.txt
    npm install
    ```
-   > **Note**: The development installation excludes Raspberry Pi GPIO libraries. The application will run fully but DW LED features will be disabled. WLED integration will still work.
+   > **Note**: The development installation excludes Raspberry Pi GPIO libraries. The application will run fully but direct GPIO LED features (DW LEDs) will be disabled. WLED integration will still work.
 
 3. **Build CSS**:
    ```bash
@@ -149,7 +149,7 @@ dune-weaver/
 │   │   ├── playlist_manager.py # Playlist system
 │   │   ├── state.py           # Global state management
 │   │   └── version_manager.py  # GitHub version checking
-│   ├── led/                    # WLED integration
+│   ├── led/                    # LED control (WLED & direct GPIO for RGB/RGBW/RGBCCT)
 │   ├── mqtt/                   # MQTT support
 │   └── update/                 # Software update management
 ├── patterns/                   # Pattern files (.thr format)
@@ -165,6 +165,10 @@ The application uses several configuration methods:
 - **Environment Variables**: `LOG_LEVEL`, connection settings
 - **State Persistence**: Settings saved to `state.json`
 - **Version Management**: Automatic GitHub release checking
+- **LED Configuration**: Support for WLED devices or direct GPIO control
+  - RGB strips (WS2812B, WS2815, etc.)
+  - RGBW strips (SK6812 RGBW)
+  - RGBCCT strips (dual WS2811 with warm/cool white) - See [RGBCCT_SETUP.md](RGBCCT_SETUP.md)
 
 ## 🌐 API Endpoints
 

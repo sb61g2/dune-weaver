@@ -26,7 +26,11 @@ class DWLEDController:
             num_leds: Number of LEDs in the strip
             gpio_pin: GPIO pin number (BCM numbering: 12, 13, 18, or 19)
             brightness: Global brightness (0.0 - 1.0)
-            pixel_order: Pixel color order (GRB, RGB, RGBW, GRBW)
+            pixel_order: Pixel color order
+                RGB strips (3-channel): GRB, RGB, BRG
+                RGBW strips (4-channel): GRBW, RGBW
+                RGBCCT strips (5-channel, dual WS2811): GRBWW, RGBWW
+                    Note: RGBCCT uses 5 bytes per LED (R, G, B, Warm White, Cool White)
             speed: Effect speed 0-255 (default: 128)
             intensity: Effect intensity 0-255 (default: 128)
         """
@@ -54,6 +58,30 @@ class DWLEDController:
         self._initialized = False
         self._init_error = None  # Store initialization error message
 
+    def _get_bytes_per_pixel(self, pixel_order: str) -> int:
+        """
+        Determine bytes per pixel based on pixel order string.
+
+        Args:
+            pixel_order: Pixel order string (e.g., GRB, GRBW, GRBWW)
+
+        Returns:
+            Number of bytes per pixel (3, 4, or 5)
+        """
+        # Count unique color channels in the pixel order string
+        # Standard channels: R, G, B, W
+        # For RGBCCT (dual white): second W represents cool white
+        order_upper = pixel_order.upper()
+
+        # RGBCCT strips with dual WS2811 use 5 bytes (R, G, B, WW, CW)
+        # We detect this by looking for "WW" in the pixel order or length >= 5
+        if "WW" in order_upper or len(order_upper) >= 5:
+            return 5
+        elif "W" in order_upper or len(order_upper) == 4:
+            return 4
+        else:
+            return 3
+
     def _initialize_hardware(self):
         """Lazy initialization of NeoPixel hardware"""
         if self._initialized:
@@ -80,12 +108,26 @@ class DWLEDController:
             board_pin = pin_map[self.gpio_pin]
 
             # Initialize NeoPixel strip
+            # Note: For 24V COB RGBCCT strips, use standard 3-byte RGB orders (RGB, GRB, BRG)
+            # The library infers bytes_per_pixel from pixel_order string length automatically
+            # Only pass pixel_order that the library recognizes (3 or 4 characters)
+
+            # Validate and potentially adjust pixel_order
+            pixel_order_to_use = self.pixel_order
+
+            # If user selected a 5-char order (RGBWW, GRBWW), fall back to 3-char equivalent
+            # Most 24V COB strips use 3-byte RGB format despite having CCT LEDs
+            if len(self.pixel_order) >= 5:
+                # Extract first 3 characters for RGB order
+                pixel_order_to_use = self.pixel_order[:3]
+                logger.warning(f"5-channel pixel order '{self.pixel_order}' not supported by NeoPixel library. Using '{pixel_order_to_use}' instead.")
+
             self._pixels = neopixel.NeoPixel(
                 board_pin,
                 self.num_leds,
                 brightness=self.brightness,
                 auto_write=False,
-                pixel_order=self.pixel_order
+                pixel_order=pixel_order_to_use
             )
 
             # Create segment for the entire strip

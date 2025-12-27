@@ -792,6 +792,7 @@ input:checked + .slider:before {
               <p class="font-medium text-blue-800">Supported LED Strips</p>
               <p class="mt-1"><strong>RGB (3-channel):</strong> WS2811, WS2812, WS2812B, WS2813, WS2815 and other WS281x strips.</p>
               <p class="mt-1"><strong>RGBW (4-channel):</strong> SK6812, SK6812W and other RGBW strips with dedicated white channel.</p>
+              <p class="mt-1"><strong>RGBCCT (5-channel):</strong> Dual WS2811 RGBCCT strips with separate warm white and cool white channels for adjustable color temperature.</p>
             </div>
           </div>
         </div>
@@ -844,9 +845,13 @@ input:checked + .slider:before {
               <option value="GRBW">GRBW - SK6812 RGBW (most common)</option>
               <option value="RGBW">RGBW - SK6812 RGBW variant</option>
             </optgroup>
+            <optgroup label="RGBCCT Strips (5-channel, dual WS2811)">
+              <option value="GRBWW">GRBWW - Dual WS2811 RGBCCT (most common)</option>
+              <option value="RGBWW">RGBWW - Dual WS2811 RGBCCT variant</option>
+            </optgroup>
           </select>
           <p class="text-xs text-slate-500">
-            Most WS2812B strips use GRB. SK6812 RGBW strips typically use GRBW. If colors appear wrong, try different orders.
+            Most WS2812B strips use GRB. SK6812 RGBW strips typically use GRBW. RGBCCT dual WS2811 strips typically use GRBWW. If colors appear wrong, try different orders.
           </p>
         </label>
       </div>

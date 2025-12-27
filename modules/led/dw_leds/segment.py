@@ -23,6 +23,11 @@ class Segment:
         self.stop = stop
         self.length = stop - start
 
+        # Store pixel order for proper color mapping
+        # The NeoPixel library's pixel_order tells it how to INTERPRET the tuple,
+        # so we need to reorder our (R,G,B) values accordingly
+        self.pixel_order = getattr(pixels, 'pixel_order', 'GRB')
+
         # Colors (up to 3 colors like WLED)
         self.colors = [0x00FF0000, 0x000000FF, 0x0000FF00]  # Red, Blue, Green defaults
 
@@ -51,12 +56,17 @@ class Segment:
             return 0
         actual_idx = self.start + i
         color = self.pixels[actual_idx]
-        # Convert from neopixel (R,G,B) or (G,R,B) to 32-bit
+        # Convert from neopixel tuple to internal color format
         if isinstance(color, tuple):
             if len(color) == 3:
+                # RGB: R, G, B
                 return (color[0] << 16) | (color[1] << 8) | color[2]
             elif len(color) == 4:
+                # RGBW: W, R, G, B (store W in bit 24-31)
                 return (color[3] << 24) | (color[0] << 16) | (color[1] << 8) | color[2]
+            elif len(color) == 5:
+                # RGBCCT/RGBWW: CW, W, R, G, B (store CW in bit 32-39, W in bit 24-31)
+                return (color[4] << 32) | (color[3] << 24) | (color[0] << 16) | (color[1] << 8) | color[2]
         return 0
 
     def set_pixel_color(self, i: int, color: int):
@@ -64,10 +74,32 @@ class Segment:
         if i < 0 or i >= self.length:
             return
         actual_idx = self.start + i
+
+        # Extract color components (get_* functions imported from utils.colors)
         r = get_r(color)
         g = get_g(color)
         b = get_b(color)
-        self.pixels[actual_idx] = (r, g, b)
+        w = get_w(color)
+        cw = get_cw(color)
+
+        # Always pass (R, G, B, [W]) tuple - NeoPixel library handles pixel_order conversion
+        # The pixel_order parameter tells NeoPixel what format the HARDWARE expects,
+        # and the library automatically reorders our RGB tuple to match
+
+        # Determine number of channels from current pixel
+        current = self.pixels[actual_idx]
+        if isinstance(current, tuple):
+            num_channels = len(current)
+            if num_channels == 3:
+                self.pixels[actual_idx] = (r, g, b)
+            elif num_channels == 4:
+                self.pixels[actual_idx] = (r, g, b, w)
+            elif num_channels >= 5:
+                # For 5+ channel strips, pack what we can
+                self.pixels[actual_idx] = (r, g, b, w, cw)[:num_channels]
+        else:
+            # Default to RGB
+            self.pixels[actual_idx] = (r, g, b)
 
     def fill(self, color: int):
         """Fill entire segment with color"""
