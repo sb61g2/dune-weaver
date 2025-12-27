@@ -14,30 +14,120 @@ from .dw_leds.utils.colors import rgb_to_color
 logger = logging.getLogger(__name__)
 
 
+class _DualWS2811RGBCCTProxy:
+    """
+    Proxy for dual WS2811 RGBCCT strips where each logical segment uses TWO physical pixels:
+    - Physical pixel 2*i: RGB (3 bytes)
+    - Physical pixel 2*i+1: CCT white channels (2-3 bytes for WW/CW)
+
+    This allows the effect engine to work with N logical RGB pixels while the strip
+    actually has 2N physical pixels.
+    """
+
+    def __init__(self, physical_pixels, logical_count: int, pixel_order: str):
+        """
+        Args:
+            physical_pixels: The actual NeoPixel object (with 2*logical_count pixels)
+            logical_count: Number of logical RGB segments
+            pixel_order: RGB channel order (GRB, RGB, BRG, etc.)
+        """
+        self._physical = physical_pixels
+        self._logical_count = logical_count
+        self.pixel_order = pixel_order
+
+        # Global white channel values (applied to all CCT pixels)
+        self._ww = 0  # Warm white (0-255)
+        self._cw = 0  # Cool white (0-255)
+
+    def __len__(self):
+        """Return logical count (not physical)"""
+        return self._logical_count
+
+    def __getitem__(self, index):
+        """Get logical RGB pixel at index"""
+        if index < 0 or index >= self._logical_count:
+            return (0, 0, 0)
+        # Read from physical pixel 2*index (RGB chip)
+        return self._physical[2 * index]
+
+    def __setitem__(self, index, value):
+        """
+        Set logical pixel at index.
+        Writes RGB to physical 2*index and WW/CW to physical 2*index+1
+        """
+        if index < 0 or index >= self._logical_count:
+            return
+
+        # Write RGB to first chip (physical index 2*i)
+        self._physical[2 * index] = value
+
+        # Write WW/CW to second chip (physical index 2*i+1)
+        # Second chip uses 3 bytes but we only need 2 for WW/CW
+        # Pack as (WW, CW, 0) to use first two channels
+        self._physical[2 * index + 1] = (self._ww, self._cw, 0)
+
+    def show(self):
+        """Update all physical pixels"""
+        self._physical.show()
+
+    def fill(self, color):
+        """Fill all logical pixels with color"""
+        for i in range(self._logical_count):
+            self[i] = color
+
+    def set_cct(self, ww: int = 0, cw: int = 0):
+        """
+        Set global white channel values (0-255 each).
+        These are applied to all CCT pixels at next show().
+        """
+        self._ww = max(0, min(255, ww))
+        self._cw = max(0, min(255, cw))
+
+    def set_white_temperature(self, kelvin: int = 4000, level: int = 255):
+        """
+        Set white light by color temperature and brightness.
+
+        Args:
+            kelvin: Color temperature (2700-6500K)
+            level: Overall white brightness (0-255)
+        """
+        # Map kelvin to WW/CW balance
+        if kelvin <= 2700:
+            ww_ratio = 1.0
+        elif kelvin >= 6500:
+            ww_ratio = 0.0
+        else:
+            # Linear interpolation between 2700K (all WW) and 6500K (all CW)
+            ww_ratio = 1.0 - (kelvin - 2700) / (6500 - 2700)
+
+        self._ww = int(level * ww_ratio)
+        self._cw = int(level * (1.0 - ww_ratio))
+
+
 class DWLEDController:
     """Dune Weaver LED Controller for NeoPixel LED strips"""
 
     def __init__(self, num_leds: int = 60, gpio_pin: int = 18, brightness: float = 0.35,
-                 pixel_order: str = "GRB", speed: int = 128, intensity: int = 128):
+                 pixel_order: str = "GRB", speed: int = 128, intensity: int = 128,
+                 dual_ws2811_rgbcct: bool = False):
         """
         Initialize Dune Weaver LED controller
 
         Args:
-            num_leds: Number of LEDs in the strip
+            num_leds: Number of logical LED segments (for dual WS2811, actual physical count is 2x)
             gpio_pin: GPIO pin number (BCM numbering: 12, 13, 18, or 19)
             brightness: Global brightness (0.0 - 1.0)
-            pixel_order: Pixel color order
-                RGB strips (3-channel): GRB, RGB, BRG
-                RGBW strips (4-channel): GRBW, RGBW
-                RGBCCT strips (5-channel, dual WS2811): GRBWW, RGBWW
-                    Note: RGBCCT uses 5 bytes per LED (R, G, B, Warm White, Cool White)
+            pixel_order: Pixel color order (RGB, GRB, BRG for 3-byte)
             speed: Effect speed 0-255 (default: 128)
             intensity: Effect intensity 0-255 (default: 128)
+            dual_ws2811_rgbcct: Enable dual WS2811 mode for RGBCCT strips
+                When True: each logical segment uses 2 physical pixels (RGB + CCT)
         """
         self.num_leds = num_leds
         self.gpio_pin = gpio_pin
         self.brightness = brightness
         self.pixel_order = pixel_order
+        self._dual_ws2811_rgbcct = dual_ws2811_rgbcct
 
         # State
         self._powered_on = False
@@ -108,32 +198,33 @@ class DWLEDController:
             board_pin = pin_map[self.gpio_pin]
 
             # Initialize NeoPixel strip
-            # For RGBCCT strips: extract RGB order and set bpp=5 to send all 5 bytes
+            # For dual WS2811 RGBCCT strips: create 2x physical pixels and wrap in proxy
 
-            # Determine bytes per pixel and pixel order
-            pixel_order_to_use = self.pixel_order
-            bpp = None  # Let library auto-detect unless we override
+            # Determine physical pixel count
+            physical_leds = self.num_leds * 2 if self._dual_ws2811_rgbcct else self.num_leds
 
-            if len(self.pixel_order) >= 5:
-                # RGBCCT/RGBWW: Extract RGB order from first 3 chars, set bpp=5
-                pixel_order_to_use = self.pixel_order[:3]
-                bpp = 5
-                logger.info(f"5-channel RGBCCT mode: Using pixel order '{pixel_order_to_use}' with bpp=5")
+            # Use only 3-byte pixel orders (RGB, GRB, BRG)
+            pixel_order_to_use = self.pixel_order[:3] if len(self.pixel_order) > 3 else self.pixel_order
 
-            # Build NeoPixel arguments
-            neopixel_args = {
-                'pin': board_pin,
-                'n': self.num_leds,
-                'brightness': self.brightness,
-                'auto_write': False,
-                'pixel_order': pixel_order_to_use
-            }
+            if self._dual_ws2811_rgbcct:
+                logger.info(f"Dual WS2811 RGBCCT mode: {self.num_leds} logical segments → {physical_leds} physical pixels, pixel order '{pixel_order_to_use}'")
+            else:
+                logger.info(f"Standard RGB mode: {physical_leds} pixels, pixel order '{pixel_order_to_use}'")
 
-            # Add bpp if specified (for RGBCCT 5-channel strips)
-            if bpp is not None:
-                neopixel_args['bpp'] = bpp
+            # Create physical NeoPixel object
+            physical_pixels = neopixel.NeoPixel(
+                board_pin,
+                physical_leds,
+                brightness=self.brightness,
+                auto_write=False,
+                pixel_order=pixel_order_to_use
+            )
 
-            self._pixels = neopixel.NeoPixel(**neopixel_args)
+            # Wrap in proxy if dual WS2811 mode
+            if self._dual_ws2811_rgbcct:
+                self._pixels = _DualWS2811RGBCCTProxy(physical_pixels, self.num_leds, pixel_order_to_use)
+            else:
+                self._pixels = physical_pixels
 
             # Create segment for the entire strip
             self._segment = Segment(self._pixels, 0, self.num_leds)

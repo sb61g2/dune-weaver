@@ -31,7 +31,8 @@ class LEDInterface:
 
     def __init__(self, provider: LEDProviderType = "none", ip_address: Optional[str] = None,
                  num_leds: Optional[int] = None, gpio_pin: Optional[int] = None, pixel_order: Optional[str] = None,
-                 brightness: Optional[float] = None, speed: Optional[int] = None, intensity: Optional[int] = None):
+                 brightness: Optional[float] = None, speed: Optional[int] = None, intensity: Optional[int] = None,
+                 dual_ws2811_rgbcct: bool = False):
         self.provider = provider
         self._controller = None
 
@@ -47,7 +48,7 @@ class LEDInterface:
             brightness = brightness if brightness is not None else 0.35
             speed = speed if speed is not None else 128
             intensity = intensity if intensity is not None else 128
-            self._controller = DWLEDController(num_leds, gpio_pin, brightness, pixel_order=pixel_order, speed=speed, intensity=intensity)
+            self._controller = DWLEDController(num_leds, gpio_pin, brightness, pixel_order=pixel_order, speed=speed, intensity=intensity, dual_ws2811_rgbcct=dual_ws2811_rgbcct)
 
     @property
     def is_configured(self) -> bool:
@@ -56,7 +57,8 @@ class LEDInterface:
 
     def update_config(self, provider: LEDProviderType, ip_address: Optional[str] = None,
                      num_leds: Optional[int] = None, gpio_pin: Optional[int] = None, pixel_order: Optional[str] = None,
-                     brightness: Optional[float] = None, speed: Optional[int] = None, intensity: Optional[int] = None):
+                     brightness: Optional[float] = None, speed: Optional[int] = None, intensity: Optional[int] = None,
+                     dual_ws2811_rgbcct: bool = False):
         """Update LED provider configuration"""
         self.provider = provider
 
@@ -78,7 +80,7 @@ class LEDInterface:
             brightness = brightness if brightness is not None else 0.35
             speed = speed if speed is not None else 128
             intensity = intensity if intensity is not None else 128
-            self._controller = DWLEDController(num_leds, gpio_pin, brightness, pixel_order=pixel_order, speed=speed, intensity=intensity)
+            self._controller = DWLEDController(num_leds, gpio_pin, brightness, pixel_order=pixel_order, speed=speed, intensity=intensity, dual_ws2811_rgbcct=dual_ws2811_rgbcct)
         else:
             self._controller = None
 

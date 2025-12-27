@@ -129,9 +129,11 @@ async def lifespan(app: FastAPI):
                 pixel_order=state.dw_led_pixel_order,
                 brightness=state.dw_led_brightness / 100.0,
                 speed=state.dw_led_speed,
-                intensity=state.dw_led_intensity
+                intensity=state.dw_led_intensity,
+                dual_ws2811_rgbcct=state.dw_led_dual_ws2811_rgbcct
             )
-            logger.info(f"LED controller initialized: DW LEDs ({state.dw_led_num_leds} LEDs on GPIO{state.dw_led_gpio_pin}, pixel order: {state.dw_led_pixel_order})")
+            mode_str = " (dual WS2811 RGBCCT)" if state.dw_led_dual_ws2811_rgbcct else ""
+            logger.info(f"LED controller initialized: DW LEDs ({state.dw_led_num_leds} LEDs on GPIO{state.dw_led_gpio_pin}, pixel order: {state.dw_led_pixel_order}{mode_str})")
         else:
             state.led_controller = None
             logger.info("LED controller not configured")
@@ -366,6 +368,7 @@ class DwLedSettingsUpdate(BaseModel):
     brightness: Optional[int] = None
     speed: Optional[int] = None
     intensity: Optional[int] = None
+    dual_ws2811_rgbcct: Optional[bool] = None
     idle_effect: Optional[dict] = None
     playing_effect: Optional[dict] = None
     idle_timeout_enabled: Optional[bool] = None
@@ -670,6 +673,9 @@ async def update_settings(settings_update: SettingsUpdate):
                 state.dw_led_speed = dw.speed
             if dw.intensity is not None:
                 state.dw_led_intensity = dw.intensity
+            if dw.dual_ws2811_rgbcct is not None:
+                state.dw_led_dual_ws2811_rgbcct = dw.dual_ws2811_rgbcct
+                led_reinit_needed = True  # Hardware config changed
             if dw.idle_effect is not None:
                 state.dw_led_idle_effect = dw.idle_effect
             if dw.playing_effect is not None:
@@ -1685,7 +1691,8 @@ async def set_led_config(request: LEDConfigRequest):
             pixel_order=state.dw_led_pixel_order,
             brightness=state.dw_led_brightness / 100.0,
             speed=state.dw_led_speed,
-            intensity=state.dw_led_intensity
+            intensity=state.dw_led_intensity,
+            dual_ws2811_rgbcct=state.dw_led_dual_ws2811_rgbcct
         )
 
         restart_msg = " (restarted)" if hardware_changed else ""

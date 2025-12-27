@@ -65,12 +65,13 @@ class AppState:
         self.led_controller = None
 
         # DW LED settings
-        self.dw_led_num_leds = 60  # Number of LEDs in strip
+        self.dw_led_num_leds = 60  # Number of LEDs in strip (logical count for dual WS2811)
         self.dw_led_gpio_pin = 18  # GPIO pin (12, 13, 18, or 19)
         self.dw_led_pixel_order = "GRB"  # Pixel color order for WS281x (GRB, RGB, BGR, etc.)
         self.dw_led_brightness = 35  # Brightness 0-100
         self.dw_led_speed = 128  # Effect speed 0-255
         self.dw_led_intensity = 128  # Effect intensity 0-255
+        self.dw_led_dual_ws2811_rgbcct = False  # Dual WS2811 mode for RGBCCT strips
 
         # Idle effect settings (all parameters)
         self.dw_led_idle_effect = None  # Full effect configuration dict or None
@@ -259,6 +260,7 @@ class AppState:
             "dw_led_brightness": self.dw_led_brightness,
             "dw_led_speed": self.dw_led_speed,
             "dw_led_intensity": self.dw_led_intensity,
+            "dw_led_dual_ws2811_rgbcct": self.dw_led_dual_ws2811_rgbcct,
             "dw_led_idle_effect": self.dw_led_idle_effect,
             "dw_led_playing_effect": self.dw_led_playing_effect,
             "dw_led_idle_timeout_enabled": self.dw_led_idle_timeout_enabled,
@@ -325,6 +327,7 @@ class AppState:
         self.dw_led_brightness = data.get('dw_led_brightness', 35)
         self.dw_led_speed = data.get('dw_led_speed', 128)
         self.dw_led_intensity = data.get('dw_led_intensity', 128)
+        self.dw_led_dual_ws2811_rgbcct = data.get('dw_led_dual_ws2811_rgbcct', False)
 
         # Load effect settings (handle both old string format and new dict format)
         idle_effect_data = data.get('dw_led_idle_effect', None)
