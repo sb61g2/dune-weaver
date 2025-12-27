@@ -75,6 +75,15 @@ class _DualWS2811RGBCCTProxy:
         for i in range(self._logical_count):
             self[i] = color
 
+    def deinit(self):
+        """Deinitialize the physical NeoPixel object"""
+        if hasattr(self._physical, 'deinit'):
+            self._physical.deinit()
+
+    def stop(self):
+        """Stop/deinitialize (alias for compatibility)"""
+        self.deinit()
+
     def set_cct(self, ww: int = 0, cw: int = 0):
         """
         Set global white channel values (0-255 each).
