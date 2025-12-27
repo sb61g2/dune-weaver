@@ -854,6 +854,21 @@ input:checked + .slider:before {
             Most WS2812B strips use GRB. SK6812 RGBW strips typically use GRBW. RGBCCT dual WS2811 strips typically use GRBWW. If colors appear wrong, try different orders.
           </p>
         </label>
+
+        <!-- Dual WS2811 RGBCCT Mode -->
+        <label class="flex items-start gap-3 cursor-pointer">
+          <input
+            type="checkbox"
+            id="dwLedDualWS2811"
+            class="w-4 h-4 mt-0.5 text-sky-600 border-slate-300 rounded focus:ring-sky-500"
+          />
+          <div class="flex flex-col gap-1">
+            <span class="text-slate-700 text-sm font-medium">Dual WS2811 RGBCCT Mode</span>
+            <p class="text-xs text-slate-500">
+              Enable this for RGBCCT strips where each logical segment uses TWO physical WS2811 chips (one for RGB, one for WW/CW white channels). This mode doubles the physical pixel count and automatically routes RGB data to even pixels and white channel data to odd pixels.
+            </p>
+          </div>
+        </label>
       </div>
 
       <!-- Save Button -->

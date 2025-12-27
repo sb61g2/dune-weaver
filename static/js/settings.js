@@ -374,7 +374,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             wled_ip: settings.led?.wled_ip || null,
             dw_led_num_leds: settings.led?.dw_led?.num_leds,
             dw_led_gpio_pin: settings.led?.dw_led?.gpio_pin,
-            dw_led_pixel_order: settings.led?.dw_led?.pixel_order
+            dw_led_pixel_order: settings.led?.dw_led?.pixel_order,
+            dw_led_dual_ws2811_rgbcct: settings.led?.dw_led?.dual_ws2811_rgbcct || false
         };
         const clearPatterns = {
             custom_clear_from_in: settings.patterns?.custom_clear_from_in,
@@ -419,6 +420,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (ledConfigData.dw_led_pixel_order) {
             const pixelOrderInput = document.getElementById('dwLedPixelOrder');
             if (pixelOrderInput) pixelOrderInput.value = ledConfigData.dw_led_pixel_order;
+        }
+        // Load dual WS2811 RGBCCT mode setting
+        const dualWs2811Checkbox = document.getElementById('dwLedDualWS2811');
+        if (dualWs2811Checkbox) {
+            dualWs2811Checkbox.checked = ledConfigData.dw_led_dual_ws2811_rgbcct || false;
         }
 
         updateLedProviderUI()
@@ -653,10 +659,12 @@ function setupEventListeners() {
                 const numLeds = parseInt(document.getElementById('dwLedNumLeds')?.value) || 60;
                 const gpioPin = parseInt(document.getElementById('dwLedGpioPin')?.value) || 12;
                 const pixelOrder = document.getElementById('dwLedPixelOrder')?.value || 'GRB';
+                const dualWs2811 = document.getElementById('dwLedDualWS2811')?.checked || false;
 
                 requestBody.num_leds = numLeds;
                 requestBody.gpio_pin = gpioPin;
                 requestBody.pixel_order = pixelOrder;
+                requestBody.dual_ws2811_rgbcct = dualWs2811;
             }
 
             try {

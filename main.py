@@ -309,6 +309,7 @@ class LEDConfigRequest(BaseModel):
     gpio_pin: Optional[int] = None
     pixel_order: Optional[str] = None
     brightness: Optional[int] = None
+    dual_ws2811_rgbcct: Optional[bool] = None  # Dual WS2811 RGBCCT mode
 
 class DeletePlaylistRequest(BaseModel):
     playlist_name: str
@@ -540,6 +541,7 @@ async def get_all_settings():
                 "brightness": state.dw_led_brightness,
                 "speed": state.dw_led_speed,
                 "intensity": state.dw_led_intensity,
+                "dual_ws2811_rgbcct": state.dw_led_dual_ws2811_rgbcct,
                 "idle_effect": state.dw_led_idle_effect,
                 "playing_effect": state.dw_led_playing_effect,
                 "idle_timeout_enabled": state.dw_led_idle_timeout_enabled,
@@ -1661,9 +1663,11 @@ async def set_led_config(request: LEDConfigRequest):
         # Check if hardware settings changed (requires restart)
         old_gpio_pin = state.dw_led_gpio_pin
         old_pixel_order = state.dw_led_pixel_order
+        old_dual_ws2811 = state.dw_led_dual_ws2811_rgbcct
         hardware_changed = (
             old_gpio_pin != (request.gpio_pin or 12) or
-            old_pixel_order != (request.pixel_order or "GRB")
+            old_pixel_order != (request.pixel_order or "GRB") or
+            old_dual_ws2811 != (request.dual_ws2811_rgbcct if request.dual_ws2811_rgbcct is not None else False)
         )
 
         # Stop existing DW LED controller if hardware settings changed
@@ -1681,6 +1685,7 @@ async def set_led_config(request: LEDConfigRequest):
         state.dw_led_gpio_pin = request.gpio_pin or 12
         state.dw_led_pixel_order = request.pixel_order or "GRB"
         state.dw_led_brightness = request.brightness or 35
+        state.dw_led_dual_ws2811_rgbcct = request.dual_ws2811_rgbcct if request.dual_ws2811_rgbcct is not None else False
         state.wled_ip = None
 
         # Create new LED controller with updated settings
@@ -1766,6 +1771,7 @@ async def get_led_config():
         "dw_led_gpio_pin": state.dw_led_gpio_pin,
         "dw_led_pixel_order": state.dw_led_pixel_order,
         "dw_led_brightness": state.dw_led_brightness,
+        "dw_led_dual_ws2811_rgbcct": state.dw_led_dual_ws2811_rgbcct,
         "dw_led_idle_effect": state.dw_led_idle_effect,
         "dw_led_playing_effect": state.dw_led_playing_effect
     }
