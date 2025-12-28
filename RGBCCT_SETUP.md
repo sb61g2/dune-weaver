@@ -131,24 +131,31 @@ The last two W's represent Warm White and Cool White channels.
 
 ### Color Control
 
-The system internally handles 5-channel colors:
-- **R, G, B**: Standard RGB color values (0-255 each)
+The system handles both RGB colors and white channels independently:
+- **R, G, B**: Standard RGB color values for colored effects (0-255 each)
 - **W (WW)**: Warm white intensity (0-255)
 - **CW**: Cool white intensity (0-255)
 
-### Effect Behavior
+### RGB Color Effects
 
-Standard effects work with RGBCCT strips:
-- **Color effects** use RGB channels
-- **White-based effects** can utilize both white channels
-- The system automatically manages the 5-channel color format
+Standard LED effects use the RGB channels:
+- All color-based effects (rainbow, solid colors, etc.) use RGB channels
+- RGB effects and white channels operate independently
+- You can have RGB effects running while also using the white channels
 
-### Advanced: Color Temperature Control
+### White Channel Control
 
-While the current UI primarily uses RGB colors, the underlying system supports independent control of warm and cool white channels. This allows for:
-- Adjustable color temperature (warm to cool white)
-- Better white light quality for ambient lighting
-- Potential for future color temperature controls in the UI
+The UI provides dedicated controls for the warm/cool white channels:
+
+1. **Enable Dual WS2811 Mode**: Check the "Dual WS2811 RGBCCT Mode" checkbox in LED Configuration
+2. **Color Temperature Slider**: Adjust from 2700K (warm, orange-tinted) to 6500K (cool, blue-tinted)
+3. **White Brightness**: Control the intensity of the white channels (0-100%)
+4. **Apply White Settings**: Click to apply your color temperature and brightness settings
+
+The white channel controls appear automatically when Dual WS2811 mode is enabled. These controls are separate from RGB effects, allowing you to:
+- Use warm white for ambient lighting while RGB effects are off
+- Mix white light with RGB color effects
+- Adjust color temperature for different moods or times of day
 
 ## Specific Strip Configurations
 

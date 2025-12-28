@@ -2533,6 +2533,32 @@ async def dw_leds_intensity(request: dict):
         logger.error(f"Failed to set DW LED intensity: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/api/dw_leds/color_temperature")
+async def dw_leds_color_temperature(request: dict):
+    """Set white color temperature (dual WS2811 RGBCCT mode only)"""
+    if not state.led_controller or state.led_provider != "dw_leds":
+        raise HTTPException(status_code=400, detail="DW LEDs not configured")
+
+    kelvin = request.get("kelvin", 4000)
+    level = request.get("level", 0)
+
+    if not 2700 <= kelvin <= 6500:
+        raise HTTPException(status_code=400, detail="Color temperature must be between 2700K and 6500K")
+    if not 0 <= level <= 100:
+        raise HTTPException(status_code=400, detail="White level must be between 0 and 100")
+
+    try:
+        controller = state.led_controller.get_controller()
+        result = controller.set_color_temperature(kelvin, level)
+        # Save to state
+        state.dw_led_color_temperature = kelvin
+        state.dw_led_white_level = level
+        state.save()
+        return result
+    except Exception as e:
+        logger.error(f"Failed to set color temperature: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/api/dw_leds/save_effect_settings")
 async def dw_leds_save_effect_settings(request: dict):
     """Save current LED settings as idle or playing effect"""

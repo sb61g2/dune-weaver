@@ -592,6 +592,48 @@ class DWLEDController:
             "message": "Intensity updated"
         }
 
+    def set_color_temperature(self, kelvin: int, level: int = 100) -> Dict:
+        """
+        Set white color temperature (RGBCCT dual WS2811 mode only)
+
+        Args:
+            kelvin: Color temperature in Kelvin (2700-6500)
+            level: White brightness level 0-100
+
+        Returns:
+            Dict with status
+        """
+        if not self._initialized:
+            if not self._initialize_hardware():
+                return {"connected": False, "error": self._init_error or "Hardware not initialized"}
+
+        if not self._dual_ws2811_rgbcct:
+            return {
+                "connected": True,
+                "error": "Color temperature control requires Dual WS2811 RGBCCT mode"
+            }
+
+        # Clamp values
+        kelvin = max(2700, min(6500, kelvin))
+        level = max(0, min(100, level))
+
+        # Convert level 0-100 to 0-255
+        level_255 = int((level / 100.0) * 255)
+
+        with self._lock:
+            if isinstance(self._pixels, _DualWS2811RGBCCTProxy):
+                self._pixels.set_white_temperature(kelvin, level_255)
+                # Update all pixels to apply new white temperature
+                if self._powered_on:
+                    self._pixels.show()
+
+        return {
+            "connected": True,
+            "color_temperature": kelvin,
+            "white_level": level,
+            "message": f"Color temperature set to {kelvin}K at {level}% brightness"
+        }
+
     def get_effects(self) -> List[Tuple[int, str]]:
         """Get list of all available effects"""
         return get_all_effects()
