@@ -134,6 +134,16 @@ async def lifespan(app: FastAPI):
             )
             mode_str = " (dual WS2811 RGBCCT)" if state.dw_led_dual_ws2811_rgbcct else ""
             logger.info(f"LED controller initialized: DW LEDs ({state.dw_led_num_leds} LEDs on GPIO{state.dw_led_gpio_pin}, pixel order: {state.dw_led_pixel_order}{mode_str})")
+
+            # Apply saved white channel settings for RGBCCT strips
+            if state.dw_led_dual_ws2811_rgbcct and hasattr(state.led_controller, '_controller'):
+                controller = state.led_controller._controller
+                if hasattr(controller, 'set_color_temperature') and hasattr(controller, 'set_white_brightness_level'):
+                    # Apply saved color temperature
+                    controller.set_color_temperature(state.dw_led_color_temperature, 100)
+                    # Apply saved white brightness
+                    controller.set_white_brightness_level(state.dw_led_white_brightness)
+                    logger.info(f"Applied saved white channel settings: {state.dw_led_color_temperature}K, {state.dw_led_white_brightness}% brightness")
         else:
             state.led_controller = None
             logger.info("LED controller not configured")
@@ -1702,6 +1712,16 @@ async def set_led_config(request: LEDConfigRequest):
 
         restart_msg = " (restarted)" if hardware_changed else ""
         logger.info(f"DW LEDs configured{restart_msg}: {state.dw_led_num_leds} LEDs on GPIO{state.dw_led_gpio_pin}, pixel order: {state.dw_led_pixel_order}")
+
+        # Apply saved white channel settings for RGBCCT strips
+        if state.dw_led_dual_ws2811_rgbcct and hasattr(state.led_controller, '_controller'):
+            controller = state.led_controller._controller
+            if hasattr(controller, 'set_color_temperature') and hasattr(controller, 'set_white_brightness_level'):
+                # Apply saved color temperature
+                controller.set_color_temperature(state.dw_led_color_temperature, 100)
+                # Apply saved white brightness
+                controller.set_white_brightness_level(state.dw_led_white_brightness)
+                logger.info(f"Applied saved white channel settings: {state.dw_led_color_temperature}K, {state.dw_led_white_brightness}% brightness")
 
         # Check if initialization succeeded by checking status
         status = state.led_controller.check_status()

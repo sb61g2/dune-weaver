@@ -874,10 +874,17 @@ async function updateWhiteControlsVisibility() {
             whiteControls?.classList.remove('hidden');
             whiteControls?.classList.add('flex');
 
-            // Switch to two-column layout
+            // Switch to two-column layout (using grid-cols-3 with 2:1 ratio via col-span)
             if (mainGrid) {
                 mainGrid.classList.remove('grid-cols-1');
-                mainGrid.classList.add('grid-cols-[2fr_1fr]');
+                mainGrid.classList.add('grid-cols-3');
+            }
+
+            // Set RGB column to span 2 columns, White column to span 1
+            const rgbColumn = document.getElementById('dw-leds-rgb-controls');
+            if (rgbColumn) {
+                rgbColumn.classList.remove('col-span-1');
+                rgbColumn.classList.add('col-span-2');
             }
 
             // Load saved values
@@ -902,8 +909,15 @@ async function updateWhiteControlsVisibility() {
 
             // Switch to single-column layout
             if (mainGrid) {
-                mainGrid.classList.remove('grid-cols-[2fr_1fr]');
+                mainGrid.classList.remove('grid-cols-3');
                 mainGrid.classList.add('grid-cols-1');
+            }
+
+            // Reset RGB column to single column width
+            const rgbColumn = document.getElementById('dw-leds-rgb-controls');
+            if (rgbColumn) {
+                rgbColumn.classList.remove('col-span-2');
+                rgbColumn.classList.add('col-span-1');
             }
         }
     } catch (error) {
