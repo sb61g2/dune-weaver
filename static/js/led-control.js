@@ -177,6 +177,7 @@ async function initializeDWLedsControls() {
         if (isNaN(paletteId)) return;
 
         try {
+            // Set the palette on the LED controller
             const response = await fetch('/api/dw_leds/palette', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -192,6 +193,9 @@ async function initializeDWLedsControls() {
                 if (data.power_on !== undefined) {
                     updatePowerButtonUI(data.power_on);
                 }
+
+                // Fetch and update effect colors to match the palette
+                await updateEffectColorsFromPalette(paletteId);
             } else {
                 showStatus(data.error || 'Failed to set palette', 'error');
             }
@@ -721,6 +725,41 @@ function updateIdleTimeoutRemainingDisplay(remainingMinutes) {
     }
 }
 
+// Helper function to update effect colors from palette
+async function updateEffectColorsFromPalette(paletteId) {
+    try {
+        // Fetch the representative colors from the palette
+        const response = await fetch(`/api/dw_leds/palette_colors/${paletteId}`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+        const data = await response.json();
+        if (data.success && data.colors && data.colors.length === 3) {
+            // Update the color picker inputs
+            const color1 = document.getElementById('dw-leds-color1');
+            const color2 = document.getElementById('dw-leds-color2');
+            const color3 = document.getElementById('dw-leds-color3');
+
+            if (color1) {
+                color1.value = data.colors[0];
+                updateColorPickerStyle(color1, data.colors[0]);
+            }
+            if (color2) {
+                color2.value = data.colors[1];
+                updateColorPickerStyle(color2, data.colors[1]);
+            }
+            if (color3) {
+                color3.value = data.colors[2];
+                updateColorPickerStyle(color3, data.colors[2]);
+            }
+
+            // Apply the colors to the LED controller
+            await applyAllColors(data.colors[0], data.colors[1], data.colors[2]);
+        }
+    } catch (error) {
+        console.error('Failed to update colors from palette:', error);
+    }
+}
+
 // Helper function to apply all effect colors
 async function applyAllColors(hexColor1, hexColor2, hexColor3) {
     try {
@@ -874,17 +913,10 @@ async function updateWhiteControlsVisibility() {
             whiteControls?.classList.remove('hidden');
             whiteControls?.classList.add('flex');
 
-            // Switch to two-column layout (using grid-cols-3 with 2:1 ratio via col-span)
+            // Switch to two-column layout (equal width 1:1 ratio)
             if (mainGrid) {
                 mainGrid.classList.remove('grid-cols-1');
-                mainGrid.classList.add('grid-cols-3');
-            }
-
-            // Set RGB column to span 2 columns, White column to span 1
-            const rgbColumn = document.getElementById('dw-leds-rgb-controls');
-            if (rgbColumn) {
-                rgbColumn.classList.remove('col-span-1');
-                rgbColumn.classList.add('col-span-2');
+                mainGrid.classList.add('grid-cols-2');
             }
 
             // Load saved values
@@ -909,15 +941,8 @@ async function updateWhiteControlsVisibility() {
 
             // Switch to single-column layout
             if (mainGrid) {
-                mainGrid.classList.remove('grid-cols-3');
+                mainGrid.classList.remove('grid-cols-2');
                 mainGrid.classList.add('grid-cols-1');
-            }
-
-            // Reset RGB column to single column width
-            const rgbColumn = document.getElementById('dw-leds-rgb-controls');
-            if (rgbColumn) {
-                rgbColumn.classList.remove('col-span-2');
-                rgbColumn.classList.add('col-span-1');
             }
         }
     } catch (error) {
@@ -987,6 +1012,8 @@ async function checkDWLedsStatus() {
             const paletteSelect = document.getElementById('dw-leds-palette-select');
             if (paletteSelect && data.current_palette !== undefined) {
                 paletteSelect.value = data.current_palette;
+                // Update effect colors to reflect the current palette
+                updateEffectColorsFromPalette(data.current_palette);
             }
 
             // Update color pickers if colors are provided

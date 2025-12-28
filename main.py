@@ -2497,6 +2497,42 @@ async def dw_leds_palettes():
         logger.error(f"Failed to get DW LED palettes: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/api/dw_leds/palette_colors/{palette_id}")
+async def dw_leds_palette_colors(palette_id: int):
+    """Get representative colors from a palette"""
+    if not state.led_controller or state.led_provider != "dw_leds":
+        raise HTTPException(status_code=400, detail="DW LEDs not configured")
+
+    try:
+        from modules.led.dw_leds.utils.palettes import get_palette, color_from_palette
+
+        # Get the palette
+        palette = get_palette(palette_id)
+
+        # Get 3 representative colors from the palette (at positions 0, 128, 255)
+        color1 = color_from_palette(palette, 0, 255)
+        color2 = color_from_palette(palette, 128, 255)
+        color3 = color_from_palette(palette, 255, 255)
+
+        # Extract RGB values from the 32-bit color
+        def color_to_hex(color: int) -> str:
+            r = (color >> 16) & 0xFF
+            g = (color >> 8) & 0xFF
+            b = color & 0xFF
+            return f"#{r:02x}{g:02x}{b:02x}"
+
+        return {
+            "success": True,
+            "colors": [
+                color_to_hex(color1),
+                color_to_hex(color2),
+                color_to_hex(color3)
+            ]
+        }
+    except Exception as e:
+        logger.error(f"Failed to get palette colors: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/api/dw_leds/effect")
 async def dw_leds_effect(request: dict):
     """Set effect by ID (manual UI control - always powers on LEDs)"""
