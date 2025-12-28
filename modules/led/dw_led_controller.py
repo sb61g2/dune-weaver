@@ -80,10 +80,10 @@ class _DualWS2811RGBCCTProxy:
 
         # Apply white brightness scaling and write WW/CW to second chip (physical index 2*i+1)
         # Second chip uses 3 bytes but we only need 2 for WW/CW
-        # Pack as (WW, CW, 0) to use first two channels
+        # Pack as (CW, WW, 0) - channels are swapped on hardware
         ww_scaled = int(self._ww * self._white_brightness)
         cw_scaled = int(self._cw * self._white_brightness)
-        self._physical[2 * index + 1] = (ww_scaled, cw_scaled, 0)
+        self._physical[2 * index + 1] = (cw_scaled, ww_scaled, 0)
 
     def show(self):
         """Update all physical pixels"""
@@ -144,7 +144,8 @@ class _DualWS2811RGBCCTProxy:
 
         for i in range(self._logical_count):
             # Write WW/CW to second chip (physical index 2*i+1)
-            self._physical[2 * i + 1] = (ww_scaled, cw_scaled, 0)
+            # Pack as (CW, WW, 0) - channels are swapped on hardware
+            self._physical[2 * i + 1] = (cw_scaled, ww_scaled, 0)
 
     @property
     def brightness(self):
