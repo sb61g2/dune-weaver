@@ -73,7 +73,8 @@ class AppState:
         self.dw_led_intensity = 128  # Effect intensity 0-255
         self.dw_led_dual_ws2811_rgbcct = False  # Dual WS2811 mode for RGBCCT strips
         self.dw_led_color_temperature = 4000  # Color temperature in Kelvin (2700-6500)
-        self.dw_led_white_level = 0  # White channel brightness 0-100
+        self.dw_led_white_level = 0  # White channel level 0-100 (used by color temperature)
+        self.dw_led_white_brightness = 100  # White channel brightness multiplier 0-100
         self.dw_led_white_mode = False  # White mode (true = white channels only, false = RGB color mode)
 
         # Idle effect settings (all parameters)
@@ -266,6 +267,7 @@ class AppState:
             "dw_led_dual_ws2811_rgbcct": self.dw_led_dual_ws2811_rgbcct,
             "dw_led_color_temperature": self.dw_led_color_temperature,
             "dw_led_white_level": self.dw_led_white_level,
+            "dw_led_white_brightness": self.dw_led_white_brightness,
             "dw_led_white_mode": self.dw_led_white_mode,
             "dw_led_idle_effect": self.dw_led_idle_effect,
             "dw_led_playing_effect": self.dw_led_playing_effect,
@@ -336,6 +338,7 @@ class AppState:
         self.dw_led_dual_ws2811_rgbcct = data.get('dw_led_dual_ws2811_rgbcct', False)
         self.dw_led_color_temperature = data.get('dw_led_color_temperature', 4000)
         self.dw_led_white_level = data.get('dw_led_white_level', 0)
+        self.dw_led_white_brightness = data.get('dw_led_white_brightness', 100)
         self.dw_led_white_mode = data.get('dw_led_white_mode', False)
 
         # Load effect settings (handle both old string format and new dict format)

@@ -267,9 +267,8 @@ async function initializeDWLedsControls() {
     });
 
     colorTempSlider?.addEventListener('change', async (e) => {
-        const whiteLevelSlider = document.getElementById('dw-leds-white-level');
         const kelvin = parseInt(e.target.value);
-        const level = parseInt(whiteLevelSlider?.value || 0);
+        const level = 100; // Fixed level, brightness is controlled separately
 
         try {
             const response = await fetch('/api/dw_leds/color_temperature', {
@@ -291,36 +290,114 @@ async function initializeDWLedsControls() {
         }
     });
 
-    // White Level slider (RGBCCT)
-    const whiteLevelSlider = document.getElementById('dw-leds-white-level');
-    const whiteLevelValue = document.getElementById('dw-leds-white-level-value');
+    // White Brightness slider (RGBCCT)
+    const whiteBrightnessSlider = document.getElementById('dw-leds-white-brightness');
+    const whiteBrightnessValue = document.getElementById('dw-leds-white-brightness-value');
 
-    whiteLevelSlider?.addEventListener('input', (e) => {
-        whiteLevelValue.textContent = `${e.target.value}%`;
+    whiteBrightnessSlider?.addEventListener('input', (e) => {
+        whiteBrightnessValue.textContent = `${e.target.value}%`;
     });
 
-    whiteLevelSlider?.addEventListener('change', async (e) => {
-        const colorTempSlider = document.getElementById('dw-leds-color-temp');
-        const kelvin = parseInt(colorTempSlider?.value || 4000);
-        const level = parseInt(e.target.value);
+    whiteBrightnessSlider?.addEventListener('change', async (e) => {
+        const value = parseInt(e.target.value);
 
         try {
-            const response = await fetch('/api/dw_leds/color_temperature', {
+            const response = await fetch('/api/dw_leds/white_brightness', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ kelvin, level })
+                body: JSON.stringify({ value })
             });
 
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             const data = await response.json();
 
             if (data.connected) {
-                showStatus(`White level set to ${level}%`, 'success');
+                showStatus(`White brightness set to ${value}%`, 'success');
             } else {
-                showStatus(data.error || 'Failed to set white level', 'error');
+                showStatus(data.error || 'Failed to set white brightness', 'error');
             }
         } catch (error) {
-            showStatus(`Failed to set white level: ${error.message}`, 'error');
+            showStatus(`Failed to set white brightness: ${error.message}`, 'error');
+        }
+    });
+
+    // RGB Power On/Off button
+    const rgbPowerBtn = document.getElementById('dw-leds-rgb-power-btn');
+    let rgbLastBrightness = 35; // Store last non-zero value
+
+    rgbPowerBtn?.addEventListener('click', async () => {
+        const brightnessSlider = document.getElementById('dw-leds-brightness');
+        const currentBrightness = parseInt(brightnessSlider?.value || 0);
+
+        let newBrightness;
+        if (currentBrightness > 0) {
+            // Turn off: save current value and set to 0
+            rgbLastBrightness = currentBrightness;
+            newBrightness = 0;
+            rgbPowerBtn.textContent = 'OFF';
+            rgbPowerBtn.classList.remove('bg-slate-600', 'hover:bg-slate-700');
+            rgbPowerBtn.classList.add('bg-red-600', 'hover:bg-red-700');
+        } else {
+            // Turn on: restore last value
+            newBrightness = rgbLastBrightness;
+            rgbPowerBtn.textContent = 'ON';
+            rgbPowerBtn.classList.remove('bg-red-600', 'hover:bg-red-700');
+            rgbPowerBtn.classList.add('bg-slate-600', 'hover:bg-slate-700');
+        }
+
+        if (brightnessSlider) brightnessSlider.value = newBrightness;
+        document.getElementById('dw-leds-brightness-value').textContent = `${newBrightness}%`;
+
+        try {
+            const response = await fetch('/api/dw_leds/brightness', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ value: newBrightness })
+            });
+
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        } catch (error) {
+            showStatus(`Failed to toggle RGB power: ${error.message}`, 'error');
+        }
+    });
+
+    // White Power On/Off button
+    const whitePowerBtn = document.getElementById('dw-leds-white-power-btn');
+    let whiteLastBrightness = 100; // Store last non-zero value
+
+    whitePowerBtn?.addEventListener('click', async () => {
+        const whiteBrightnessSlider = document.getElementById('dw-leds-white-brightness');
+        const currentBrightness = parseInt(whiteBrightnessSlider?.value || 0);
+
+        let newBrightness;
+        if (currentBrightness > 0) {
+            // Turn off: save current value and set to 0
+            whiteLastBrightness = currentBrightness;
+            newBrightness = 0;
+            whitePowerBtn.textContent = 'OFF';
+            whitePowerBtn.classList.remove('bg-slate-600', 'hover:bg-slate-700');
+            whitePowerBtn.classList.add('bg-red-600', 'hover:bg-red-700');
+        } else {
+            // Turn on: restore last value
+            newBrightness = whiteLastBrightness;
+            whitePowerBtn.textContent = 'ON';
+            whitePowerBtn.classList.remove('bg-red-600', 'hover:bg-red-700');
+            whitePowerBtn.classList.add('bg-slate-600', 'hover:bg-slate-700');
+        }
+
+        if (whiteBrightnessSlider) whiteBrightnessSlider.value = newBrightness;
+        document.getElementById('dw-leds-white-brightness-value').textContent = `${newBrightness}%`;
+
+        try {
+            const response = await fetch('/api/dw_leds/white_brightness', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ value: newBrightness })
+            });
+
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        } catch (error) {
+            showStatus(`Failed to toggle white power: ${error.message}`, 'error');
         }
     });
 
@@ -789,30 +866,32 @@ async function updateWhiteControlsVisibility() {
         if (!response.ok) return;
 
         const config = await response.json();
-        const whiteControls = document.getElementById('dw-leds-white-controls');
+        const whiteControls = document.getElementById('dw-leds-white-controls-compact');
 
         if (config.dw_led_dual_ws2811_rgbcct) {
             // Show white controls for RGBCCT strips
             whiteControls?.classList.remove('hidden');
+            whiteControls?.classList.add('flex');
 
             // Load saved values
             const colorTempSlider = document.getElementById('dw-leds-color-temp');
             const colorTempValue = document.getElementById('dw-leds-color-temp-value');
-            const whiteLevelSlider = document.getElementById('dw-leds-white-level');
-            const whiteLevelValue = document.getElementById('dw-leds-white-level-value');
+            const whiteBrightnessSlider = document.getElementById('dw-leds-white-brightness');
+            const whiteBrightnessValue = document.getElementById('dw-leds-white-brightness-value');
 
             if (colorTempSlider && config.dw_led_color_temperature) {
                 colorTempSlider.value = config.dw_led_color_temperature;
                 if (colorTempValue) colorTempValue.textContent = `${config.dw_led_color_temperature}K`;
             }
 
-            if (whiteLevelSlider && config.dw_led_white_level !== undefined) {
-                whiteLevelSlider.value = config.dw_led_white_level;
-                if (whiteLevelValue) whiteLevelValue.textContent = `${config.dw_led_white_level}%`;
+            if (whiteBrightnessSlider && config.dw_led_white_brightness !== undefined) {
+                whiteBrightnessSlider.value = config.dw_led_white_brightness;
+                if (whiteBrightnessValue) whiteBrightnessValue.textContent = `${config.dw_led_white_brightness}%`;
             }
         } else {
             // Hide white controls for non-RGBCCT strips
             whiteControls?.classList.add('hidden');
+            whiteControls?.classList.remove('flex');
         }
     } catch (error) {
         console.error('Failed to update white controls visibility:', error);

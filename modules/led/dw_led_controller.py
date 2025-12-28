@@ -39,6 +39,13 @@ class _DualWS2811RGBCCTProxy:
         self._ww = 0  # Warm white (0-255)
         self._cw = 0  # Cool white (0-255)
 
+        # Separate brightness controls (0.0 - 1.0)
+        self._rgb_brightness = 1.0
+        self._white_brightness = 1.0
+
+        # Keep physical brightness at 1.0 to allow software control
+        self._physical.brightness = 1.0
+
     def __len__(self):
         """Return logical count (not physical)"""
         return self._logical_count
@@ -58,13 +65,25 @@ class _DualWS2811RGBCCTProxy:
         if index < 0 or index >= self._logical_count:
             return
 
-        # Write RGB to first chip (physical index 2*i)
-        self._physical[2 * index] = value
+        # Apply RGB brightness scaling
+        if isinstance(value, tuple) and len(value) >= 3:
+            r, g, b = value[0], value[1], value[2]
+            r = int(r * self._rgb_brightness)
+            g = int(g * self._rgb_brightness)
+            b = int(b * self._rgb_brightness)
+            scaled_value = (r, g, b)
+        else:
+            scaled_value = value
 
-        # Write WW/CW to second chip (physical index 2*i+1)
+        # Write RGB to first chip (physical index 2*i)
+        self._physical[2 * index] = scaled_value
+
+        # Apply white brightness scaling and write WW/CW to second chip (physical index 2*i+1)
         # Second chip uses 3 bytes but we only need 2 for WW/CW
         # Pack as (WW, CW, 0) to use first two channels
-        self._physical[2 * index + 1] = (self._ww, self._cw, 0)
+        ww_scaled = int(self._ww * self._white_brightness)
+        cw_scaled = int(self._cw * self._white_brightness)
+        self._physical[2 * index + 1] = (ww_scaled, cw_scaled, 0)
 
     def show(self):
         """Update all physical pixels"""
@@ -119,19 +138,44 @@ class _DualWS2811RGBCCTProxy:
 
     def _update_all_white_channels(self):
         """Update all WW/CW pixels (odd-numbered physical pixels) with current white values"""
+        # Apply white brightness scaling
+        ww_scaled = int(self._ww * self._white_brightness)
+        cw_scaled = int(self._cw * self._white_brightness)
+
         for i in range(self._logical_count):
             # Write WW/CW to second chip (physical index 2*i+1)
-            self._physical[2 * i + 1] = (self._ww, self._cw, 0)
+            self._physical[2 * i + 1] = (ww_scaled, cw_scaled, 0)
 
     @property
     def brightness(self):
-        """Get brightness from underlying physical pixels"""
-        return self._physical.brightness
+        """Get RGB brightness (for backward compatibility)"""
+        return self._rgb_brightness
 
     @brightness.setter
     def brightness(self, value):
-        """Set brightness on underlying physical pixels"""
-        self._physical.brightness = value
+        """Set RGB brightness (for backward compatibility)"""
+        self.set_rgb_brightness(value)
+
+    def set_rgb_brightness(self, value: float):
+        """
+        Set RGB brightness independently
+        Args:
+            value: Brightness 0.0-1.0
+        """
+        self._rgb_brightness = max(0.0, min(1.0, value))
+        # Trigger update by re-rendering current frame
+        # (effect loop will call show() which updates pixels)
+
+    def set_white_brightness(self, value: float):
+        """
+        Set white channel brightness independently
+        Args:
+            value: Brightness 0.0-1.0
+        """
+        self._white_brightness = max(0.0, min(1.0, value))
+        # Update white channels immediately
+        self._update_all_white_channels()
+        self._physical.show()
 
 
 class DWLEDController:
@@ -350,7 +394,19 @@ class DWLEDController:
 
     def set_brightness(self, value: int) -> Dict:
         """
-        Set global brightness
+        Set RGB brightness (for backward compatibility)
+
+        Args:
+            value: Brightness 0-100
+
+        Returns:
+            Dict with status
+        """
+        return self.set_rgb_brightness(value)
+
+    def set_rgb_brightness(self, value: int) -> Dict:
+        """
+        Set RGB brightness independently
 
         Args:
             value: Brightness 0-100
@@ -367,12 +423,46 @@ class DWLEDController:
         with self._lock:
             self.brightness = brightness
             if self._pixels:
-                self._pixels.brightness = brightness
+                if self._dual_ws2811_rgbcct and hasattr(self._pixels, 'set_rgb_brightness'):
+                    # Use separate RGB brightness for dual WS2811 mode
+                    self._pixels.set_rgb_brightness(brightness)
+                else:
+                    # Standard mode: set global brightness
+                    self._pixels.brightness = brightness
 
         return {
             "connected": True,
             "brightness": int(brightness * 100),
-            "message": "Brightness updated"
+            "message": "RGB brightness updated"
+        }
+
+    def set_white_brightness_level(self, value: int) -> Dict:
+        """
+        Set white channel brightness independently (RGBCCT mode only)
+
+        Args:
+            value: Brightness 0-100
+
+        Returns:
+            Dict with status
+        """
+        if not self._initialized:
+            if not self._initialize_hardware():
+                return {"connected": False, "error": self._init_error or "Hardware not initialized"}
+
+        if not self._dual_ws2811_rgbcct:
+            return {"connected": False, "error": "White brightness control requires RGBCCT mode"}
+
+        brightness = max(0.0, min(1.0, value / 100.0))
+
+        with self._lock:
+            if self._pixels and hasattr(self._pixels, 'set_white_brightness'):
+                self._pixels.set_white_brightness(brightness)
+
+        return {
+            "connected": True,
+            "white_brightness": int(brightness * 100),
+            "message": "White brightness updated"
         }
 
     def set_color(self, r: int, g: int, b: int) -> Dict:

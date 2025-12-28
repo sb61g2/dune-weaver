@@ -2316,7 +2316,7 @@ async def dw_leds_power(request: dict):
 
 @app.post("/api/dw_leds/brightness")
 async def dw_leds_brightness(request: dict):
-    """Set DW LED brightness (0-100)"""
+    """Set DW LED RGB brightness (0-100)"""
     if not state.led_controller or state.led_provider != "dw_leds":
         raise HTTPException(status_code=400, detail="DW LEDs not configured")
 
@@ -2326,14 +2326,39 @@ async def dw_leds_brightness(request: dict):
 
     try:
         controller = state.led_controller.get_controller()
-        result = controller.set_brightness(value)
+        result = controller.set_rgb_brightness(value)
         # Update state if successful
         if result.get("connected"):
             state.dw_led_brightness = value
             state.save()
         return result
     except Exception as e:
-        logger.error(f"Failed to set DW LED brightness: {str(e)}")
+        logger.error(f"Failed to set DW LED RGB brightness: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/dw_leds/white_brightness")
+async def dw_leds_white_brightness(request: dict):
+    """Set DW LED white channel brightness (0-100) - RGBCCT mode only"""
+    if not state.led_controller or state.led_provider != "dw_leds":
+        raise HTTPException(status_code=400, detail="DW LEDs not configured")
+
+    value = request.get("value", 0)
+    if not 0 <= value <= 100:
+        raise HTTPException(status_code=400, detail="White brightness must be between 0 and 100")
+
+    try:
+        controller = state.led_controller.get_controller()
+        result = controller.set_white_brightness_level(value)
+        # Update state if successful
+        if result.get("connected"):
+            # Store white brightness in state (we can add this field if needed)
+            if not hasattr(state, 'dw_led_white_brightness'):
+                state.dw_led_white_brightness = 0
+            state.dw_led_white_brightness = value
+            state.save()
+        return result
+    except Exception as e:
+        logger.error(f"Failed to set DW LED white brightness: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/dw_leds/color")
