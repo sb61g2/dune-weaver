@@ -861,79 +861,10 @@ input:checked + .slider:before {
           <div class="flex flex-col gap-1">
             <span class="text-slate-700 text-sm font-medium">Dual WS2811 RGBCCT Mode</span>
             <p class="text-xs text-slate-500">
-              Enable this for RGBCCT strips where each logical segment uses TWO physical WS2811 chips (one for RGB, one for WW/CW white channels). This mode doubles the physical pixel count and automatically routes RGB data to even pixels and white channel data to odd pixels.
+              Enable this for RGBCCT strips where each logical segment uses TWO physical WS2811 chips (one for RGB, one for WW/CW white channels). This mode doubles the physical pixel count and automatically routes RGB data to even pixels and white channel data to odd pixels. Color temperature controls will appear on the <a href="/led" class="text-sky-600 hover:text-sky-700 underline">LED Control page</a>.
             </p>
           </div>
         </label>
-
-        <!-- Color Temperature Controls (shown only when Dual WS2811 is enabled) -->
-        <div id="colorTempControls" class="hidden bg-slate-50 rounded-lg p-4 border border-slate-200">
-          <div class="flex flex-col gap-4">
-            <div class="flex items-center gap-2 mb-2">
-              <span class="material-icons text-amber-500 text-lg">wb_sunny</span>
-              <h4 class="text-slate-800 text-sm font-semibold">White Channel Control</h4>
-            </div>
-
-            <!-- Color Temperature Slider -->
-            <label class="flex flex-col gap-2">
-              <div class="flex items-center justify-between">
-                <span class="text-slate-700 text-sm font-medium">Color Temperature</span>
-                <span id="colorTempValue" class="text-slate-600 text-sm font-mono">4000K</span>
-              </div>
-              <div class="relative">
-                <input
-                  id="colorTempSlider"
-                  type="range"
-                  min="2700"
-                  max="6500"
-                  value="4000"
-                  step="100"
-                  class="w-full h-2 rounded-lg appearance-none cursor-pointer"
-                  style="background: linear-gradient(to right, #ff9500 0%, #fff 50%, #a8c7ff 100%);"
-                />
-              </div>
-              <div class="flex justify-between text-xs text-slate-500">
-                <span class="flex items-center gap-1">
-                  <span class="material-icons text-amber-500" style="font-size: 14px;">wb_incandescent</span>
-                  Warm (2700K)
-                </span>
-                <span class="flex items-center gap-1">
-                  <span class="material-icons text-blue-400" style="font-size: 14px;">ac_unit</span>
-                  Cool (6500K)
-                </span>
-              </div>
-            </label>
-
-            <!-- White Level Slider -->
-            <label class="flex flex-col gap-2">
-              <div class="flex items-center justify-between">
-                <span class="text-slate-700 text-sm font-medium">White Brightness</span>
-                <span id="whiteLevelValue" class="text-slate-600 text-sm font-mono">0%</span>
-              </div>
-              <input
-                id="whiteLevelSlider"
-                type="range"
-                min="0"
-                max="100"
-                value="0"
-                step="1"
-                class="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer slider-thumb-sky"
-              />
-              <p class="text-xs text-slate-500">
-                Adjust the brightness of the warm/cool white channels. RGB color effects use the RGB channels independently.
-              </p>
-            </label>
-
-            <!-- Apply Button -->
-            <button
-              id="applyColorTemp"
-              class="flex items-center justify-center gap-2 w-full cursor-pointer rounded-lg h-10 px-4 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium leading-normal transition-colors"
-            >
-              <span class="material-icons text-lg">palette</span>
-              <span class="truncate">Apply White Settings</span>
-            </button>
-          </div>
-        </div>
       </div>
 
       <!-- Save Button -->

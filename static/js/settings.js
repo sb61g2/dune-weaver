@@ -284,77 +284,6 @@ function updateLedProviderUI() {
     }
 }
 
-// Show/hide color temperature controls based on dual WS2811 mode
-function updateColorTempControlsVisibility() {
-    const dualWs2811Checkbox = document.getElementById('dwLedDualWS2811');
-    const colorTempControls = document.getElementById('colorTempControls');
-
-    if (dualWs2811Checkbox && colorTempControls) {
-        if (dualWs2811Checkbox.checked) {
-            colorTempControls.classList.remove('hidden');
-        } else {
-            colorTempControls.classList.add('hidden');
-        }
-    }
-}
-
-// Update color temperature display value
-function updateColorTempValue() {
-    const slider = document.getElementById('colorTempSlider');
-    const valueDisplay = document.getElementById('colorTempValue');
-    if (slider && valueDisplay) {
-        valueDisplay.textContent = slider.value + 'K';
-    }
-}
-
-// Update white level display value
-function updateWhiteLevelValue() {
-    const slider = document.getElementById('whiteLevelSlider');
-    const valueDisplay = document.getElementById('whiteLevelValue');
-    if (slider && valueDisplay) {
-        valueDisplay.textContent = slider.value + '%';
-    }
-}
-
-// Apply color temperature settings
-async function applyColorTemperature() {
-    const colorTempSlider = document.getElementById('colorTempSlider');
-    const whiteLevelSlider = document.getElementById('whiteLevelSlider');
-    const applyButton = document.getElementById('applyColorTemp');
-
-    if (!colorTempSlider || !whiteLevelSlider) return;
-
-    const kelvin = parseInt(colorTempSlider.value);
-    const level = parseInt(whiteLevelSlider.value);
-
-    // Show loading state
-    const originalText = applyButton.innerHTML;
-    applyButton.disabled = true;
-    applyButton.innerHTML = '<span class="material-icons text-lg animate-spin">refresh</span><span class="truncate">Applying...</span>';
-
-    try {
-        const response = await fetch('/api/dw_leds/color_temperature', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ kelvin, level })
-        });
-
-        if (response.ok) {
-            const result = await response.json();
-            showStatusMessage(result.message || 'Color temperature applied', 'success');
-        } else {
-            const error = await response.json();
-            showStatusMessage(error.detail || 'Failed to apply color temperature', 'error');
-        }
-    } catch (error) {
-        showStatusMessage('Error applying color temperature: ' + error.message, 'error');
-    } finally {
-        // Restore button state
-        applyButton.disabled = false;
-        applyButton.innerHTML = originalText;
-    }
-}
-
 // Load LED configuration from server
 async function loadLedConfig() {
     try {
@@ -497,21 +426,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (dualWs2811Checkbox) {
             dualWs2811Checkbox.checked = ledConfigData.dw_led_dual_ws2811_rgbcct || false;
         }
-
-        // Load color temperature settings
-        const colorTempSlider = document.getElementById('colorTempSlider');
-        const whiteLevelSlider = document.getElementById('whiteLevelSlider');
-        if (colorTempSlider && settings.led?.dw_led?.color_temperature) {
-            colorTempSlider.value = settings.led.dw_led.color_temperature;
-            document.getElementById('colorTempValue').textContent = settings.led.dw_led.color_temperature + 'K';
-        }
-        if (whiteLevelSlider && settings.led?.dw_led?.white_level !== undefined) {
-            whiteLevelSlider.value = settings.led.dw_led.white_level;
-            document.getElementById('whiteLevelValue').textContent = settings.led.dw_led.white_level + '%';
-        }
-
-        // Initialize color temperature controls visibility
-        updateColorTempControlsVisibility();
 
         updateLedProviderUI()
         
@@ -725,27 +639,6 @@ function setupEventListeners() {
     ledProviderRadios.forEach(radio => {
         radio.addEventListener('change', updateLedProviderUI);
     });
-
-    // Color temperature control event listeners
-    const dualWs2811Checkbox = document.getElementById('dwLedDualWS2811');
-    if (dualWs2811Checkbox) {
-        dualWs2811Checkbox.addEventListener('change', updateColorTempControlsVisibility);
-    }
-
-    const colorTempSlider = document.getElementById('colorTempSlider');
-    if (colorTempSlider) {
-        colorTempSlider.addEventListener('input', updateColorTempValue);
-    }
-
-    const whiteLevelSlider = document.getElementById('whiteLevelSlider');
-    if (whiteLevelSlider) {
-        whiteLevelSlider.addEventListener('input', updateWhiteLevelValue);
-    }
-
-    const applyColorTempButton = document.getElementById('applyColorTemp');
-    if (applyColorTempButton) {
-        applyColorTempButton.addEventListener('click', applyColorTemperature);
-    }
 
     // Save LED configuration
     const saveLedConfig = document.getElementById('saveLedConfig');

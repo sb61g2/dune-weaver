@@ -258,6 +258,75 @@ async function initializeDWLedsControls() {
         }
     });
 
+    // Color Temperature slider (RGBCCT)
+    const colorTempSlider = document.getElementById('dw-leds-color-temp');
+    const colorTempValue = document.getElementById('dw-leds-color-temp-value');
+
+    colorTempSlider?.addEventListener('input', (e) => {
+        colorTempValue.textContent = `${e.target.value}K`;
+    });
+
+    colorTempSlider?.addEventListener('change', async (e) => {
+        const whiteLevelSlider = document.getElementById('dw-leds-white-level');
+        const kelvin = parseInt(e.target.value);
+        const level = parseInt(whiteLevelSlider?.value || 0);
+
+        try {
+            const response = await fetch('/api/dw_leds/color_temperature', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ kelvin, level })
+            });
+
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const data = await response.json();
+
+            if (data.connected) {
+                showStatus(`Color temperature set to ${kelvin}K`, 'success');
+            } else {
+                showStatus(data.error || 'Failed to set color temperature', 'error');
+            }
+        } catch (error) {
+            showStatus(`Failed to set color temperature: ${error.message}`, 'error');
+        }
+    });
+
+    // White Level slider (RGBCCT)
+    const whiteLevelSlider = document.getElementById('dw-leds-white-level');
+    const whiteLevelValue = document.getElementById('dw-leds-white-level-value');
+
+    whiteLevelSlider?.addEventListener('input', (e) => {
+        whiteLevelValue.textContent = `${e.target.value}%`;
+    });
+
+    whiteLevelSlider?.addEventListener('change', async (e) => {
+        const colorTempSlider = document.getElementById('dw-leds-color-temp');
+        const kelvin = parseInt(colorTempSlider?.value || 4000);
+        const level = parseInt(e.target.value);
+
+        try {
+            const response = await fetch('/api/dw_leds/color_temperature', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ kelvin, level })
+            });
+
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const data = await response.json();
+
+            if (data.connected) {
+                showStatus(`White level set to ${level}%`, 'success');
+            } else {
+                showStatus(data.error || 'Failed to set white level', 'error');
+            }
+        } catch (error) {
+            showStatus(`Failed to set white level: ${error.message}`, 'error');
+        }
+    });
+
+    // Show/hide white controls based on dual WS2811 mode
+    updateWhiteControlsVisibility();
+
     // Save Current Idle Effect
     document.getElementById('dw-leds-save-current-idle')?.addEventListener('click', async () => {
         await saveCurrentEffectSettings('idle');
@@ -685,6 +754,43 @@ async function loadEffectsAndPalettes() {
     } catch (error) {
         console.error('Failed to load effects and palettes:', error);
         showStatus('Failed to load effects and palettes', 'error');
+    }
+}
+
+// Show/hide white channel controls based on dual WS2811 mode
+async function updateWhiteControlsVisibility() {
+    try {
+        const response = await fetch('/get_led_config');
+        if (!response.ok) return;
+
+        const config = await response.json();
+        const whiteControls = document.getElementById('dw-leds-white-controls');
+
+        if (whiteControls) {
+            if (config.dw_led_dual_ws2811_rgbcct) {
+                whiteControls.classList.remove('hidden');
+
+                // Load saved values
+                const colorTempSlider = document.getElementById('dw-leds-color-temp');
+                const colorTempValue = document.getElementById('dw-leds-color-temp-value');
+                const whiteLevelSlider = document.getElementById('dw-leds-white-level');
+                const whiteLevelValue = document.getElementById('dw-leds-white-level-value');
+
+                if (colorTempSlider && config.dw_led_color_temperature) {
+                    colorTempSlider.value = config.dw_led_color_temperature;
+                    if (colorTempValue) colorTempValue.textContent = `${config.dw_led_color_temperature}K`;
+                }
+
+                if (whiteLevelSlider && config.dw_led_white_level !== undefined) {
+                    whiteLevelSlider.value = config.dw_led_white_level;
+                    if (whiteLevelValue) whiteLevelValue.textContent = `${config.dw_led_white_level}%`;
+                }
+            } else {
+                whiteControls.classList.add('hidden');
+            }
+        }
+    } catch (error) {
+        console.error('Failed to update white controls visibility:', error);
     }
 }
 
