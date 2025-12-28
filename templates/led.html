@@ -193,48 +193,25 @@
           </button>
         </div>
 
-        <!-- Brightness Control -->
+        <!-- RGB Brightness Control -->
         <div class="flex flex-col gap-3">
           <div class="flex items-center justify-between">
-            <h3 class="text-slate-800 text-base font-semibold">Brightness</h3>
+            <h3 class="text-slate-800 text-base font-semibold">RGB Brightness</h3>
             <span id="dw-leds-brightness-value" class="text-sm font-medium text-slate-600">35%</span>
           </div>
           <input type="range" id="dw-leds-brightness" min="0" max="100" value="35" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer">
         </div>
       </div>
 
-      <!-- Mode Selector (RGBCCT only) -->
-      <div id="dw-leds-mode-selector" class="hidden">
-        <div class="bg-slate-100 rounded-lg p-4 border border-slate-300">
-          <div class="flex items-center justify-between mb-3">
-            <h3 class="text-slate-800 text-base font-semibold">Operating Mode</h3>
-            <span class="text-xs text-slate-500">(RGBCCT Mode)</span>
-          </div>
-          <div class="flex gap-2">
-            <button id="dw-leds-color-mode-btn" class="flex-1 px-4 py-3 rounded-lg font-medium transition-all bg-blue-500 text-white shadow-md">
-              <div class="flex items-center justify-center gap-2">
-                <span class="material-icons text-lg">palette</span>
-                <span>Color Effects</span>
-              </div>
-            </button>
-            <button id="dw-leds-white-mode-btn" class="flex-1 px-4 py-3 rounded-lg font-medium transition-all bg-slate-200 text-slate-800 border border-slate-400 hover:bg-slate-300">
-              <div class="flex items-center justify-center gap-2">
-                <span class="material-icons text-lg">wb_sunny</span>
-                <span>White Light</span>
-              </div>
-            </button>
-          </div>
-          <p class="text-xs text-slate-500 mt-2">Switch between RGB color effects and dedicated white light mode</p>
-        </div>
-      </div>
-
-      <!-- Color Mode Controls -->
-      <div id="dw-leds-color-mode-controls">
-
       <!-- Effects and Palettes -->
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div class="flex flex-col gap-3">
-          <h3 class="text-slate-800 text-base font-semibold">Effect</h3>
+          <div class="flex items-center justify-between">
+            <h3 class="text-slate-800 text-base font-semibold">Effect</h3>
+            <button id="dw-leds-static-btn" class="px-3 py-1 text-xs font-medium rounded-lg bg-slate-600 text-white hover:bg-slate-700 transition-colors">
+              Static
+            </button>
+          </div>
           <select id="dw-leds-effect-select" class="form-select w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-slate-900 focus:outline-0 focus:ring-2 focus:ring-blue-500">
             <option value="">Loading effects...</option>
           </select>
@@ -285,11 +262,17 @@
         </div>
       </div>
 
-      </div><!-- End Color Mode Controls -->
+      </div>
 
-      <!-- White Mode Controls (RGBCCT) -->
-      <div id="dw-leds-white-mode-controls" class="hidden">
-        <div class="bg-amber-50 rounded-lg p-6 border border-amber-200">
+      <!-- White Channel Controls (RGBCCT only) -->
+      <div id="dw-leds-white-controls" class="hidden pt-4 border-t border-slate-200">
+        <div class="bg-amber-50 rounded-lg p-4 border border-amber-200">
+          <div class="flex items-center gap-2 mb-4">
+            <span class="material-icons text-amber-600 text-lg">wb_sunny</span>
+            <h3 class="text-slate-800 text-base font-semibold">White Channels</h3>
+            <span class="text-xs text-slate-500 ml-auto">(RGBCCT Mode)</span>
+          </div>
+
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
             <!-- Color Temperature -->
             <div class="flex flex-col gap-3">
@@ -322,7 +305,7 @@
               </div>
               <input type="range" id="dw-leds-white-level" min="0" max="100" value="0" step="1"
                      class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer">
-              <p class="text-xs text-slate-500">Dedicated warm/cool white LEDs (RGB chips off)</p>
+              <p class="text-xs text-slate-500">Adds warm/cool white to soften RGB effects</p>
             </div>
           </div>
         </div>

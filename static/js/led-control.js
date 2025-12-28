@@ -324,16 +324,32 @@ async function initializeDWLedsControls() {
         }
     });
 
-    // Show/hide mode selector and controls based on dual WS2811 mode
+    // Show/hide white controls based on dual WS2811 mode
     updateWhiteControlsVisibility();
 
-    // Mode switching buttons (RGBCCT)
-    document.getElementById('dw-leds-color-mode-btn')?.addEventListener('click', async () => {
-        await switchToColorMode();
-    });
+    // Static button - sets effect to Static (ID 0)
+    document.getElementById('dw-leds-static-btn')?.addEventListener('click', async () => {
+        try {
+            const response = await fetch('/api/dw_leds/effect', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ effect_id: 0 })  // Static effect
+            });
 
-    document.getElementById('dw-leds-white-mode-btn')?.addEventListener('click', async () => {
-        await switchToWhiteMode();
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const data = await response.json();
+
+            if (data.connected) {
+                // Update UI
+                const effectSelect = document.getElementById('dw-leds-effect-select');
+                if (effectSelect) effectSelect.value = '0';
+                showStatus('Static mode activated', 'success');
+            } else {
+                showStatus(data.error || 'Failed to set static mode', 'error');
+            }
+        } catch (error) {
+            showStatus(`Failed to set static mode: ${error.message}`, 'error');
+        }
     });
 
     // Save Current Idle Effect
@@ -766,18 +782,18 @@ async function loadEffectsAndPalettes() {
     }
 }
 
-// Show/hide mode selector and controls based on dual WS2811 mode
+// Show/hide white controls based on dual WS2811 mode
 async function updateWhiteControlsVisibility() {
     try {
         const response = await fetch('/get_led_config');
         if (!response.ok) return;
 
         const config = await response.json();
-        const modeSelector = document.getElementById('dw-leds-mode-selector');
+        const whiteControls = document.getElementById('dw-leds-white-controls');
 
         if (config.dw_led_dual_ws2811_rgbcct) {
-            // Show mode selector for RGBCCT strips
-            modeSelector?.classList.remove('hidden');
+            // Show white controls for RGBCCT strips
+            whiteControls?.classList.remove('hidden');
 
             // Load saved values
             const colorTempSlider = document.getElementById('dw-leds-color-temp');
@@ -794,103 +810,12 @@ async function updateWhiteControlsVisibility() {
                 whiteLevelSlider.value = config.dw_led_white_level;
                 if (whiteLevelValue) whiteLevelValue.textContent = `${config.dw_led_white_level}%`;
             }
-
-            // Load and apply saved mode (default to color mode)
-            const whiteMode = config.dw_led_white_mode || false;
-            if (whiteMode) {
-                updateModeUI('white');
-            } else {
-                updateModeUI('color');
-            }
         } else {
-            // Hide mode selector for non-RGBCCT strips
-            modeSelector?.classList.add('hidden');
+            // Hide white controls for non-RGBCCT strips
+            whiteControls?.classList.add('hidden');
         }
     } catch (error) {
         console.error('Failed to update white controls visibility:', error);
-    }
-}
-
-// Update mode UI (button states and control visibility)
-function updateModeUI(mode) {
-    const colorModeBtn = document.getElementById('dw-leds-color-mode-btn');
-    const whiteModeBtn = document.getElementById('dw-leds-white-mode-btn');
-    const colorModeControls = document.getElementById('dw-leds-color-mode-controls');
-    const whiteModeControls = document.getElementById('dw-leds-white-mode-controls');
-
-    if (mode === 'white') {
-        // White mode active
-        colorModeBtn?.classList.remove('bg-blue-500', 'text-white', 'shadow-md');
-        colorModeBtn?.classList.add('bg-slate-200', 'text-slate-800', 'border', 'border-slate-400', 'hover:bg-slate-300');
-
-        whiteModeBtn?.classList.remove('bg-slate-200', 'text-slate-800', 'border', 'border-slate-400', 'hover:bg-slate-300');
-        whiteModeBtn?.classList.add('bg-amber-500', 'text-white', 'shadow-md');
-
-        colorModeControls?.classList.add('hidden');
-        whiteModeControls?.classList.remove('hidden');
-    } else {
-        // Color mode active
-        colorModeBtn?.classList.remove('bg-slate-200', 'text-slate-800', 'border', 'border-slate-400', 'hover:bg-slate-300');
-        colorModeBtn?.classList.add('bg-blue-500', 'text-white', 'shadow-md');
-
-        whiteModeBtn?.classList.remove('bg-amber-500', 'text-white', 'shadow-md');
-        whiteModeBtn?.classList.add('bg-slate-200', 'text-slate-800', 'border', 'border-slate-400', 'hover:bg-slate-300');
-
-        colorModeControls?.classList.remove('hidden');
-        whiteModeControls?.classList.add('hidden');
-    }
-}
-
-// Switch to Color Mode
-async function switchToColorMode() {
-    try {
-        // Turn off white channels
-        const response = await fetch('/api/dw_leds/set_white_mode', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ white_mode: false })
-        });
-
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const data = await response.json();
-
-        if (data.connected) {
-            updateModeUI('color');
-            showStatus('Switched to Color Mode', 'success');
-        } else {
-            showStatus(data.error || 'Failed to switch to Color Mode', 'error');
-        }
-    } catch (error) {
-        showStatus(`Failed to switch to Color Mode: ${error.message}`, 'error');
-    }
-}
-
-// Switch to White Mode
-async function switchToWhiteMode() {
-    try {
-        // Get current temperature and level
-        const colorTempSlider = document.getElementById('dw-leds-color-temp');
-        const whiteLevelSlider = document.getElementById('dw-leds-white-level');
-        const kelvin = parseInt(colorTempSlider?.value || 4000);
-        const level = parseInt(whiteLevelSlider?.value || 50);
-
-        const response = await fetch('/api/dw_leds/set_white_mode', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ white_mode: true, kelvin, level })
-        });
-
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const data = await response.json();
-
-        if (data.connected) {
-            updateModeUI('white');
-            showStatus(`White Mode: ${kelvin}K at ${level}%`, 'success');
-        } else {
-            showStatus(data.error || 'Failed to switch to White Mode', 'error');
-        }
-    } catch (error) {
-        showStatus(`Failed to switch to White Mode: ${error.message}`, 'error');
     }
 }
 
