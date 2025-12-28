@@ -87,10 +87,12 @@ class _DualWS2811RGBCCTProxy:
     def set_cct(self, ww: int = 0, cw: int = 0):
         """
         Set global white channel values (0-255 each).
-        These are applied to all CCT pixels at next show().
+        These are applied to all CCT pixels immediately.
         """
         self._ww = max(0, min(255, ww))
         self._cw = max(0, min(255, cw))
+        # Update all white channel pixels immediately
+        self._update_all_white_channels()
 
     def set_white_temperature(self, kelvin: int = 4000, level: int = 255):
         """
@@ -111,6 +113,25 @@ class _DualWS2811RGBCCTProxy:
 
         self._ww = int(level * ww_ratio)
         self._cw = int(level * (1.0 - ww_ratio))
+
+        # Update all white channel pixels immediately
+        self._update_all_white_channels()
+
+    def _update_all_white_channels(self):
+        """Update all WW/CW pixels (odd-numbered physical pixels) with current white values"""
+        for i in range(self._logical_count):
+            # Write WW/CW to second chip (physical index 2*i+1)
+            self._physical[2 * i + 1] = (self._ww, self._cw, 0)
+
+    @property
+    def brightness(self):
+        """Get brightness from underlying physical pixels"""
+        return self._physical.brightness
+
+    @brightness.setter
+    def brightness(self, value):
+        """Set brightness on underlying physical pixels"""
+        self._physical.brightness = value
 
 
 class DWLEDController:
