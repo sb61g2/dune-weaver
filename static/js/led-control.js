@@ -77,35 +77,27 @@ async function initializeDWLedsControls() {
     await checkDWLedsStatus();
     await loadEffectsAndPalettes();
 
-    // Power toggle button
-    document.getElementById('dw-leds-power-toggle')?.addEventListener('click', async () => {
-        try {
-            const response = await fetch('/api/dw_leds/power', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ state: 2 })  // Toggle
-            });
-
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            const data = await response.json();
-
-            if (data.connected) {
-                showStatus(`Power ${data.power_on ? 'ON' : 'OFF'}`, 'success');
-                await checkDWLedsStatus();
-            } else {
-                showStatus(data.error || 'Failed to toggle power', 'error');
-            }
-        } catch (error) {
-            showStatus(`Failed to toggle power: ${error.message}`, 'error');
-        }
-    });
-
     // Brightness slider
     const brightnessSlider = document.getElementById('dw-leds-brightness');
     const brightnessValue = document.getElementById('dw-leds-brightness-value');
+    const rgbPowerBtn = document.getElementById('dw-leds-rgb-power-btn');
 
     brightnessSlider?.addEventListener('input', (e) => {
-        brightnessValue.textContent = `${e.target.value}%`;
+        const value = parseInt(e.target.value);
+        brightnessValue.textContent = `${value}%`;
+
+        // Update RGB power button state
+        if (rgbPowerBtn) {
+            if (value === 0) {
+                rgbPowerBtn.textContent = 'OFF';
+                rgbPowerBtn.classList.remove('bg-slate-600', 'hover:bg-slate-700');
+                rgbPowerBtn.classList.add('bg-red-600', 'hover:bg-red-700');
+            } else {
+                rgbPowerBtn.textContent = 'ON';
+                rgbPowerBtn.classList.remove('bg-red-600', 'hover:bg-red-700');
+                rgbPowerBtn.classList.add('bg-slate-600', 'hover:bg-slate-700');
+            }
+        }
     });
 
     brightnessSlider?.addEventListener('change', async (e) => {
@@ -159,10 +151,6 @@ async function initializeDWLedsControls() {
 
             if (data.connected) {
                 showStatus(`Effect changed`, 'success');
-                // Update power button state if backend auto-powered on
-                if (data.power_on !== undefined) {
-                    updatePowerButtonUI(data.power_on);
-                }
             } else {
                 showStatus(data.error || 'Failed to set effect', 'error');
             }
@@ -189,10 +177,6 @@ async function initializeDWLedsControls() {
 
             if (data.connected) {
                 showStatus(`Palette changed`, 'success');
-                // Update power button state if backend auto-powered on
-                if (data.power_on !== undefined) {
-                    updatePowerButtonUI(data.power_on);
-                }
 
                 // Fetch and update effect colors to match the palette
                 await updateEffectColorsFromPalette(paletteId);
@@ -297,9 +281,24 @@ async function initializeDWLedsControls() {
     // White Brightness slider (RGBCCT)
     const whiteBrightnessSlider = document.getElementById('dw-leds-white-brightness');
     const whiteBrightnessValue = document.getElementById('dw-leds-white-brightness-value');
+    const whitePowerBtn = document.getElementById('dw-leds-white-power-btn');
 
     whiteBrightnessSlider?.addEventListener('input', (e) => {
-        whiteBrightnessValue.textContent = `${e.target.value}%`;
+        const value = parseInt(e.target.value);
+        whiteBrightnessValue.textContent = `${value}%`;
+
+        // Update White power button state
+        if (whitePowerBtn) {
+            if (value === 0) {
+                whitePowerBtn.textContent = 'OFF';
+                whitePowerBtn.classList.remove('bg-slate-600', 'hover:bg-slate-700');
+                whitePowerBtn.classList.add('bg-red-600', 'hover:bg-red-700');
+            } else {
+                whitePowerBtn.textContent = 'ON';
+                whitePowerBtn.classList.remove('bg-red-600', 'hover:bg-red-700');
+                whitePowerBtn.classList.add('bg-slate-600', 'hover:bg-slate-700');
+            }
+        }
     });
 
     whiteBrightnessSlider?.addEventListener('change', async (e) => {
@@ -326,7 +325,6 @@ async function initializeDWLedsControls() {
     });
 
     // RGB Power On/Off button
-    const rgbPowerBtn = document.getElementById('dw-leds-rgb-power-btn');
     let rgbLastBrightness = 35; // Store last non-zero value
 
     rgbPowerBtn?.addEventListener('click', async () => {
@@ -366,7 +364,6 @@ async function initializeDWLedsControls() {
     });
 
     // White Power On/Off button
-    const whitePowerBtn = document.getElementById('dw-leds-white-power-btn');
     let whiteLastBrightness = 100; // Store last non-zero value
 
     whitePowerBtn?.addEventListener('click', async () => {
@@ -933,6 +930,20 @@ async function updateWhiteControlsVisibility() {
             if (whiteBrightnessSlider && config.dw_led_white_brightness !== undefined) {
                 whiteBrightnessSlider.value = config.dw_led_white_brightness;
                 if (whiteBrightnessValue) whiteBrightnessValue.textContent = `${config.dw_led_white_brightness}%`;
+
+                // Update White power button state based on brightness
+                const whitePowerBtn = document.getElementById('dw-leds-white-power-btn');
+                if (whitePowerBtn) {
+                    if (config.dw_led_white_brightness === 0) {
+                        whitePowerBtn.textContent = 'OFF';
+                        whitePowerBtn.classList.remove('bg-slate-600', 'hover:bg-slate-700');
+                        whitePowerBtn.classList.add('bg-red-600', 'hover:bg-red-700');
+                    } else {
+                        whitePowerBtn.textContent = 'ON';
+                        whitePowerBtn.classList.remove('bg-red-600', 'hover:bg-red-700');
+                        whitePowerBtn.classList.add('bg-slate-600', 'hover:bg-slate-700');
+                    }
+                }
             }
         } else {
             // Hide white controls for non-RGBCCT strips
@@ -950,22 +961,6 @@ async function updateWhiteControlsVisibility() {
     }
 }
 
-// Helper function to update power button UI based on power state
-function updatePowerButtonUI(powerOn) {
-    const powerButton = document.getElementById('dw-leds-power-toggle');
-    const powerButtonText = document.getElementById('dw-leds-power-text');
-
-    if (powerButton && powerButtonText) {
-        if (powerOn) {
-            powerButton.className = 'flex items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-3 text-sm font-semibold text-white shadow-md hover:bg-red-700 transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-2';
-            powerButtonText.textContent = 'Turn OFF';
-        } else {
-            powerButton.className = 'flex items-center justify-center gap-2 rounded-lg bg-green-600 px-4 py-3 text-sm font-semibold text-white shadow-md hover:bg-green-700 transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-green-400 focus:ring-offset-2';
-            powerButtonText.textContent = 'Turn ON';
-        }
-    }
-}
-
 // Check DW LEDs connection status
 async function checkDWLedsStatus() {
     try {
@@ -978,15 +973,27 @@ async function checkDWLedsStatus() {
             const powerState = data.power_on ? 'ON' : 'OFF';
             showStatus(`Connected: ${data.num_leds} LEDs on GPIO ${data.gpio_pin} - Power: ${powerState}`, 'success');
 
-            // Update power button appearance
-            updatePowerButtonUI(data.power_on);
-
-            // Update slider values
+            // Update slider values and power button states
             const brightnessSlider = document.getElementById('dw-leds-brightness');
             const brightnessValue = document.getElementById('dw-leds-brightness-value');
+            const rgbPowerBtn = document.getElementById('dw-leds-rgb-power-btn');
+
             if (brightnessSlider && data.brightness !== undefined) {
                 brightnessSlider.value = data.brightness;
                 if (brightnessValue) brightnessValue.textContent = `${data.brightness}%`;
+
+                // Update RGB power button state based on brightness
+                if (rgbPowerBtn) {
+                    if (data.brightness === 0) {
+                        rgbPowerBtn.textContent = 'OFF';
+                        rgbPowerBtn.classList.remove('bg-slate-600', 'hover:bg-slate-700');
+                        rgbPowerBtn.classList.add('bg-red-600', 'hover:bg-red-700');
+                    } else {
+                        rgbPowerBtn.textContent = 'ON';
+                        rgbPowerBtn.classList.remove('bg-red-600', 'hover:bg-red-700');
+                        rgbPowerBtn.classList.add('bg-slate-600', 'hover:bg-slate-700');
+                    }
+                }
             }
 
             const speedSlider = document.getElementById('dw-leds-speed');
