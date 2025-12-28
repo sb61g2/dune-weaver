@@ -867,11 +867,18 @@ async function updateWhiteControlsVisibility() {
 
         const config = await response.json();
         const whiteControls = document.getElementById('dw-leds-white-controls-compact');
+        const mainGrid = document.getElementById('dw-leds-main-grid');
 
         if (config.dw_led_dual_ws2811_rgbcct) {
             // Show white controls for RGBCCT strips
             whiteControls?.classList.remove('hidden');
             whiteControls?.classList.add('flex');
+
+            // Switch to two-column layout
+            if (mainGrid) {
+                mainGrid.classList.remove('grid-cols-1');
+                mainGrid.classList.add('grid-cols-[2fr_1fr]');
+            }
 
             // Load saved values
             const colorTempSlider = document.getElementById('dw-leds-color-temp');
@@ -892,6 +899,12 @@ async function updateWhiteControlsVisibility() {
             // Hide white controls for non-RGBCCT strips
             whiteControls?.classList.add('hidden');
             whiteControls?.classList.remove('flex');
+
+            // Switch to single-column layout
+            if (mainGrid) {
+                mainGrid.classList.remove('grid-cols-[2fr_1fr]');
+                mainGrid.classList.add('grid-cols-1');
+            }
         }
     } catch (error) {
         console.error('Failed to update white controls visibility:', error);
