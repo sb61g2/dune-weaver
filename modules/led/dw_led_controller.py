@@ -655,6 +655,72 @@ class DWLEDController:
             "message": f"Color temperature set to {kelvin}K at {level}% brightness"
         }
 
+    def set_white_mode(self, white_mode: bool, kelvin: int = 4000, level: int = 50) -> Dict:
+        """
+        Set white mode (RGBCCT dual WS2811 mode only)
+
+        Args:
+            white_mode: True = white channels only (RGB off), False = color mode (WW/CW off)
+            kelvin: Color temperature in Kelvin (2700-6500) - used when white_mode is True
+            level: White brightness level 0-100 - used when white_mode is True
+
+        Returns:
+            Dict with status
+        """
+        if not self._initialized:
+            if not self._initialize_hardware():
+                return {"connected": False, "error": self._init_error or "Hardware not initialized"}
+
+        if not self._dual_ws2811_rgbcct:
+            return {
+                "connected": True,
+                "error": "White mode requires Dual WS2811 RGBCCT mode"
+            }
+
+        # Clamp values
+        kelvin = max(2700, min(6500, kelvin))
+        level = max(0, min(100, level))
+        level_255 = int((level / 100.0) * 255)
+
+        with self._lock:
+            if isinstance(self._pixels, _DualWS2811RGBCCTProxy):
+                if white_mode:
+                    # White Mode: Turn off RGB, enable WW/CW
+                    # Fill all RGB pixels with black
+                    self._pixels.fill((0, 0, 0))
+                    # Set white temperature
+                    self._pixels.set_white_temperature(kelvin, level_255)
+                    # Auto power on
+                    if not self._powered_on:
+                        self._powered_on = True
+                    # Ensure effect thread is running
+                    if self._effect_thread is None or not self._effect_thread.is_alive():
+                        self._stop_thread.clear()
+                        self._effect_thread = threading.Thread(target=self._effect_loop, daemon=True)
+                        self._effect_thread.start()
+                else:
+                    # Color Mode: Turn off WW/CW, enable RGB
+                    # Set white channels to 0
+                    self._pixels.set_white_temperature(0, 0)
+
+                # Apply changes
+                if self._powered_on:
+                    self._pixels.show()
+
+        mode_str = "White Mode" if white_mode else "Color Mode"
+        if white_mode:
+            return {
+                "connected": True,
+                "white_mode": white_mode,
+                "message": f"{mode_str} activated: {kelvin}K at {level}%"
+            }
+        else:
+            return {
+                "connected": True,
+                "white_mode": white_mode,
+                "message": f"{mode_str} activated"
+            }
+
     def get_effects(self) -> List[Tuple[int, str]]:
         """Get list of all available effects"""
         return get_all_effects()

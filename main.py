@@ -1772,6 +1772,9 @@ async def get_led_config():
         "dw_led_pixel_order": state.dw_led_pixel_order,
         "dw_led_brightness": state.dw_led_brightness,
         "dw_led_dual_ws2811_rgbcct": state.dw_led_dual_ws2811_rgbcct,
+        "dw_led_color_temperature": state.dw_led_color_temperature,
+        "dw_led_white_level": state.dw_led_white_level,
+        "dw_led_white_mode": state.dw_led_white_mode,
         "dw_led_idle_effect": state.dw_led_idle_effect,
         "dw_led_playing_effect": state.dw_led_playing_effect
     }
@@ -2557,6 +2560,35 @@ async def dw_leds_color_temperature(request: dict):
         return result
     except Exception as e:
         logger.error(f"Failed to set color temperature: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/dw_leds/set_white_mode")
+async def dw_leds_set_white_mode(request: dict):
+    """Set white mode (RGBCCT dual WS2811 mode only)"""
+    if not state.led_controller or state.led_provider != "dw_leds":
+        raise HTTPException(status_code=400, detail="DW LEDs not configured")
+
+    white_mode = request.get("white_mode", False)
+    kelvin = request.get("kelvin", 4000)
+    level = request.get("level", 50)
+
+    if not 2700 <= kelvin <= 6500:
+        raise HTTPException(status_code=400, detail="Color temperature must be between 2700K and 6500K")
+    if not 0 <= level <= 100:
+        raise HTTPException(status_code=400, detail="White level must be between 0 and 100")
+
+    try:
+        controller = state.led_controller.get_controller()
+        result = controller.set_white_mode(white_mode, kelvin, level)
+        # Save to state
+        state.dw_led_white_mode = white_mode
+        if white_mode:
+            state.dw_led_color_temperature = kelvin
+            state.dw_led_white_level = level
+        state.save()
+        return result
+    except Exception as e:
+        logger.error(f"Failed to set white mode: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/dw_leds/save_effect_settings")

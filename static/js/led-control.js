@@ -324,8 +324,17 @@ async function initializeDWLedsControls() {
         }
     });
 
-    // Show/hide white controls based on dual WS2811 mode
+    // Show/hide mode selector and controls based on dual WS2811 mode
     updateWhiteControlsVisibility();
+
+    // Mode switching buttons (RGBCCT)
+    document.getElementById('dw-leds-color-mode-btn')?.addEventListener('click', async () => {
+        await switchToColorMode();
+    });
+
+    document.getElementById('dw-leds-white-mode-btn')?.addEventListener('click', async () => {
+        await switchToWhiteMode();
+    });
 
     // Save Current Idle Effect
     document.getElementById('dw-leds-save-current-idle')?.addEventListener('click', async () => {
@@ -757,40 +766,131 @@ async function loadEffectsAndPalettes() {
     }
 }
 
-// Show/hide white channel controls based on dual WS2811 mode
+// Show/hide mode selector and controls based on dual WS2811 mode
 async function updateWhiteControlsVisibility() {
     try {
         const response = await fetch('/get_led_config');
         if (!response.ok) return;
 
         const config = await response.json();
-        const whiteControls = document.getElementById('dw-leds-white-controls');
+        const modeSelector = document.getElementById('dw-leds-mode-selector');
 
-        if (whiteControls) {
-            if (config.dw_led_dual_ws2811_rgbcct) {
-                whiteControls.classList.remove('hidden');
+        if (config.dw_led_dual_ws2811_rgbcct) {
+            // Show mode selector for RGBCCT strips
+            modeSelector?.classList.remove('hidden');
 
-                // Load saved values
-                const colorTempSlider = document.getElementById('dw-leds-color-temp');
-                const colorTempValue = document.getElementById('dw-leds-color-temp-value');
-                const whiteLevelSlider = document.getElementById('dw-leds-white-level');
-                const whiteLevelValue = document.getElementById('dw-leds-white-level-value');
+            // Load saved values
+            const colorTempSlider = document.getElementById('dw-leds-color-temp');
+            const colorTempValue = document.getElementById('dw-leds-color-temp-value');
+            const whiteLevelSlider = document.getElementById('dw-leds-white-level');
+            const whiteLevelValue = document.getElementById('dw-leds-white-level-value');
 
-                if (colorTempSlider && config.dw_led_color_temperature) {
-                    colorTempSlider.value = config.dw_led_color_temperature;
-                    if (colorTempValue) colorTempValue.textContent = `${config.dw_led_color_temperature}K`;
-                }
-
-                if (whiteLevelSlider && config.dw_led_white_level !== undefined) {
-                    whiteLevelSlider.value = config.dw_led_white_level;
-                    if (whiteLevelValue) whiteLevelValue.textContent = `${config.dw_led_white_level}%`;
-                }
-            } else {
-                whiteControls.classList.add('hidden');
+            if (colorTempSlider && config.dw_led_color_temperature) {
+                colorTempSlider.value = config.dw_led_color_temperature;
+                if (colorTempValue) colorTempValue.textContent = `${config.dw_led_color_temperature}K`;
             }
+
+            if (whiteLevelSlider && config.dw_led_white_level !== undefined) {
+                whiteLevelSlider.value = config.dw_led_white_level;
+                if (whiteLevelValue) whiteLevelValue.textContent = `${config.dw_led_white_level}%`;
+            }
+
+            // Load and apply saved mode (default to color mode)
+            const whiteMode = config.dw_led_white_mode || false;
+            if (whiteMode) {
+                updateModeUI('white');
+            } else {
+                updateModeUI('color');
+            }
+        } else {
+            // Hide mode selector for non-RGBCCT strips
+            modeSelector?.classList.add('hidden');
         }
     } catch (error) {
         console.error('Failed to update white controls visibility:', error);
+    }
+}
+
+// Update mode UI (button states and control visibility)
+function updateModeUI(mode) {
+    const colorModeBtn = document.getElementById('dw-leds-color-mode-btn');
+    const whiteModeBtn = document.getElementById('dw-leds-white-mode-btn');
+    const colorModeControls = document.getElementById('dw-leds-color-mode-controls');
+    const whiteModeControls = document.getElementById('dw-leds-white-mode-controls');
+
+    if (mode === 'white') {
+        // White mode active
+        colorModeBtn?.classList.remove('bg-blue-500', 'text-white', 'shadow-md');
+        colorModeBtn?.classList.add('bg-white', 'text-slate-700', 'border', 'border-slate-300', 'hover:bg-slate-50');
+
+        whiteModeBtn?.classList.remove('bg-white', 'text-slate-700', 'border', 'border-slate-300', 'hover:bg-slate-50');
+        whiteModeBtn?.classList.add('bg-amber-500', 'text-white', 'shadow-md');
+
+        colorModeControls?.classList.add('hidden');
+        whiteModeControls?.classList.remove('hidden');
+    } else {
+        // Color mode active
+        colorModeBtn?.classList.remove('bg-white', 'text-slate-700', 'border', 'border-slate-300', 'hover:bg-slate-50');
+        colorModeBtn?.classList.add('bg-blue-500', 'text-white', 'shadow-md');
+
+        whiteModeBtn?.classList.remove('bg-amber-500', 'text-white', 'shadow-md');
+        whiteModeBtn?.classList.add('bg-white', 'text-slate-700', 'border', 'border-slate-300', 'hover:bg-slate-50');
+
+        colorModeControls?.classList.remove('hidden');
+        whiteModeControls?.classList.add('hidden');
+    }
+}
+
+// Switch to Color Mode
+async function switchToColorMode() {
+    try {
+        // Turn off white channels
+        const response = await fetch('/api/dw_leds/set_white_mode', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ white_mode: false })
+        });
+
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+
+        if (data.connected) {
+            updateModeUI('color');
+            showStatus('Switched to Color Mode', 'success');
+        } else {
+            showStatus(data.error || 'Failed to switch to Color Mode', 'error');
+        }
+    } catch (error) {
+        showStatus(`Failed to switch to Color Mode: ${error.message}`, 'error');
+    }
+}
+
+// Switch to White Mode
+async function switchToWhiteMode() {
+    try {
+        // Get current temperature and level
+        const colorTempSlider = document.getElementById('dw-leds-color-temp');
+        const whiteLevelSlider = document.getElementById('dw-leds-white-level');
+        const kelvin = parseInt(colorTempSlider?.value || 4000);
+        const level = parseInt(whiteLevelSlider?.value || 50);
+
+        const response = await fetch('/api/dw_leds/set_white_mode', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ white_mode: true, kelvin, level })
+        });
+
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+
+        if (data.connected) {
+            updateModeUI('white');
+            showStatus(`White Mode: ${kelvin}K at ${level}%`, 'success');
+        } else {
+            showStatus(data.error || 'Failed to switch to White Mode', 'error');
+        }
+    } catch (error) {
+        showStatus(`Failed to switch to White Mode: ${error.message}`, 'error');
     }
 }
 
