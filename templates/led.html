@@ -191,24 +191,87 @@
         </button>
       </div>
 
-      <!-- Brightness Controls Grid -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
-        <!-- RGB Brightness Control -->
-        <div class="flex flex-col gap-3">
-          <div class="flex items-center justify-between">
-            <h3 class="text-slate-800 text-base font-semibold">RGB Brightness</h3>
-            <button id="dw-leds-rgb-power-btn" class="px-2 py-1 text-xs font-medium rounded bg-slate-600 text-white hover:bg-slate-700 transition-colors">
-              ON
-            </button>
+      <!-- Two Column Layout: RGB Controls (Left) | White Controls (Right) -->
+      <div class="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-6">
+
+        <!-- Left Column: RGB Controls -->
+        <div class="flex flex-col gap-6">
+
+          <!-- RGB Brightness -->
+          <div class="flex flex-col gap-3">
+            <div class="flex items-center justify-between">
+              <h3 class="text-slate-800 text-base font-semibold">RGB Brightness</h3>
+              <button id="dw-leds-rgb-power-btn" class="px-2 py-1 text-xs font-medium rounded bg-slate-600 text-white hover:bg-slate-700 transition-colors">
+                ON
+              </button>
+            </div>
+            <div class="flex items-center gap-3">
+              <input type="range" id="dw-leds-brightness" min="0" max="100" value="35" class="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer">
+              <span id="dw-leds-brightness-value" class="text-sm font-medium text-slate-600 w-10 text-right">35%</span>
+            </div>
           </div>
-          <div class="flex items-center gap-3">
-            <input type="range" id="dw-leds-brightness" min="0" max="100" value="35" class="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer">
-            <span id="dw-leds-brightness-value" class="text-sm font-medium text-slate-600 w-10 text-right">35%</span>
+
+          <!-- Effect -->
+          <div class="flex flex-col gap-3">
+            <div class="flex items-center justify-between">
+              <h3 class="text-slate-800 text-base font-semibold">Effect</h3>
+              <button id="dw-leds-static-btn" class="px-3 py-1 text-xs font-medium rounded-lg bg-slate-600 text-white hover:bg-slate-700 transition-colors">
+                Static
+              </button>
+            </div>
+            <select id="dw-leds-effect-select" class="form-select w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-slate-900 focus:outline-0 focus:ring-2 focus:ring-blue-500">
+              <option value="">Loading effects...</option>
+            </select>
           </div>
+
+          <!-- Palette -->
+          <div class="flex flex-col gap-3">
+            <h3 class="text-slate-800 text-base font-semibold">Palette</h3>
+            <select id="dw-leds-palette-select" class="form-select w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-slate-900 focus:outline-0 focus:ring-2 focus:ring-blue-500">
+              <option value="">Loading palettes...</option>
+            </select>
+          </div>
+
+          <!-- Speed -->
+          <div class="flex flex-col gap-3">
+            <div class="flex items-center justify-between">
+              <h3 class="text-slate-800 text-base font-semibold">Speed</h3>
+              <span id="dw-leds-speed-value" class="text-sm font-medium text-slate-600">128</span>
+            </div>
+            <input type="range" id="dw-leds-speed" min="0" max="255" value="128" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer">
+          </div>
+
+          <!-- Intensity -->
+          <div class="flex flex-col gap-3">
+            <div class="flex items-center justify-between">
+              <h3 class="text-slate-800 text-base font-semibold">Intensity</h3>
+              <span id="dw-leds-intensity-value" class="text-sm font-medium text-slate-600">128</span>
+            </div>
+            <input type="range" id="dw-leds-intensity" min="0" max="255" value="128" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer">
+          </div>
+
+          <!-- Effect Color Slots -->
+          <div class="flex items-center gap-4 flex-wrap">
+            <h3 class="text-slate-800 text-base font-semibold">Effect Colors:</h3>
+            <div class="flex items-center gap-2">
+              <label class="text-xs font-medium text-slate-600">Slot 1</label>
+              <input type="text" id="dw-leds-color1" value="#ff0000" class="w-8 h-8 rounded-full border-2 border-slate-300 cursor-pointer effect-color-picker text-transparent" readonly>
+            </div>
+            <div class="flex items-center gap-2">
+              <label class="text-xs font-medium text-slate-600">Slot 2</label>
+              <input type="text" id="dw-leds-color2" value="#000000" class="w-8 h-8 rounded-full border-2 border-slate-300 cursor-pointer effect-color-picker text-transparent" readonly>
+            </div>
+            <div class="flex items-center gap-2">
+              <label class="text-xs font-medium text-slate-600">Slot 3</label>
+              <input type="text" id="dw-leds-color3" value="#0000ff" class="w-8 h-8 rounded-full border-2 border-slate-300 cursor-pointer effect-color-picker text-transparent" readonly>
+            </div>
+          </div>
+
         </div>
 
-        <!-- White Channels Control (RGBCCT only) -->
-        <div id="dw-leds-white-controls-compact" class="hidden flex-col gap-3">
+        <!-- Right Column: White Controls (RGBCCT only) -->
+        <div id="dw-leds-white-controls-compact" class="hidden flex-col gap-6">
+
           <!-- White Brightness -->
           <div class="flex flex-col gap-3">
             <div class="flex items-center justify-between">
@@ -223,11 +286,11 @@
             </div>
           </div>
 
-          <!-- Color Temperature (stacked below) -->
-          <div class="flex flex-col gap-2 pt-2">
+          <!-- Color Temperature -->
+          <div class="flex flex-col gap-3">
             <div class="flex items-center justify-between">
-              <h4 class="text-slate-700 text-sm font-semibold">Color Temperature</h4>
-              <span id="dw-leds-color-temp-value" class="text-xs font-medium text-slate-600">4000K</span>
+              <h3 class="text-slate-800 text-base font-semibold">Color Temperature</h3>
+              <span id="dw-leds-color-temp-value" class="text-sm font-medium text-slate-600">4000K</span>
             </div>
             <div class="relative">
               <input type="range" id="dw-leds-color-temp" min="2700" max="6500" value="4000" step="100"
@@ -245,66 +308,9 @@
               </span>
             </div>
           </div>
-        </div>
-      </div>
 
-      <!-- Effects and Palettes -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div class="flex flex-col gap-3">
-          <div class="flex items-center justify-between">
-            <h3 class="text-slate-800 text-base font-semibold">Effect</h3>
-            <button id="dw-leds-static-btn" class="px-3 py-1 text-xs font-medium rounded-lg bg-slate-600 text-white hover:bg-slate-700 transition-colors">
-              Static
-            </button>
-          </div>
-          <select id="dw-leds-effect-select" class="form-select w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-slate-900 focus:outline-0 focus:ring-2 focus:ring-blue-500">
-            <option value="">Loading effects...</option>
-          </select>
-        </div>
-        <div class="flex flex-col gap-3">
-          <h3 class="text-slate-800 text-base font-semibold">Palette</h3>
-          <select id="dw-leds-palette-select" class="form-select w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-slate-900 focus:outline-0 focus:ring-2 focus:ring-blue-500">
-            <option value="">Loading palettes...</option>
-          </select>
-        </div>
-      </div>
-
-      <!-- Speed and Intensity -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
-        <!-- Speed Control -->
-        <div class="flex flex-col gap-3">
-          <div class="flex items-center justify-between">
-            <h3 class="text-slate-800 text-base font-semibold">Speed</h3>
-            <span id="dw-leds-speed-value" class="text-sm font-medium text-slate-600">128</span>
-          </div>
-          <input type="range" id="dw-leds-speed" min="0" max="255" value="128" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer">
         </div>
 
-        <!-- Intensity Control -->
-        <div class="flex flex-col gap-3">
-          <div class="flex items-center justify-between">
-            <h3 class="text-slate-800 text-base font-semibold">Intensity</h3>
-            <span id="dw-leds-intensity-value" class="text-sm font-medium text-slate-600">128</span>
-          </div>
-          <input type="range" id="dw-leds-intensity" min="0" max="255" value="128" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer">
-        </div>
-      </div>
-
-      <!-- Effect Color Slots -->
-      <div class="flex items-center gap-4">
-        <h3 class="text-slate-800 text-base font-semibold">Effect Colors:</h3>
-        <div class="flex items-center gap-2">
-          <label class="text-xs font-medium text-slate-600">Slot 1</label>
-          <input type="text" id="dw-leds-color1" value="#ff0000" class="w-8 h-8 rounded-full border-2 border-slate-300 cursor-pointer effect-color-picker text-transparent" readonly>
-        </div>
-        <div class="flex items-center gap-2">
-          <label class="text-xs font-medium text-slate-600">Slot 2</label>
-          <input type="text" id="dw-leds-color2" value="#000000" class="w-8 h-8 rounded-full border-2 border-slate-300 cursor-pointer effect-color-picker text-transparent" readonly>
-        </div>
-        <div class="flex items-center gap-2">
-          <label class="text-xs font-medium text-slate-600">Slot 3</label>
-          <input type="text" id="dw-leds-color3" value="#0000ff" class="w-8 h-8 rounded-full border-2 border-slate-300 cursor-pointer effect-color-picker text-transparent" readonly>
-        </div>
       </div>
 
       </div>
