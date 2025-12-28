@@ -821,20 +821,20 @@ function updateModeUI(mode) {
     if (mode === 'white') {
         // White mode active
         colorModeBtn?.classList.remove('bg-blue-500', 'text-white', 'shadow-md');
-        colorModeBtn?.classList.add('bg-white', 'text-slate-700', 'border', 'border-slate-300', 'hover:bg-slate-50');
+        colorModeBtn?.classList.add('bg-slate-200', 'text-slate-800', 'border', 'border-slate-400', 'hover:bg-slate-300');
 
-        whiteModeBtn?.classList.remove('bg-white', 'text-slate-700', 'border', 'border-slate-300', 'hover:bg-slate-50');
+        whiteModeBtn?.classList.remove('bg-slate-200', 'text-slate-800', 'border', 'border-slate-400', 'hover:bg-slate-300');
         whiteModeBtn?.classList.add('bg-amber-500', 'text-white', 'shadow-md');
 
         colorModeControls?.classList.add('hidden');
         whiteModeControls?.classList.remove('hidden');
     } else {
         // Color mode active
-        colorModeBtn?.classList.remove('bg-white', 'text-slate-700', 'border', 'border-slate-300', 'hover:bg-slate-50');
+        colorModeBtn?.classList.remove('bg-slate-200', 'text-slate-800', 'border', 'border-slate-400', 'hover:bg-slate-300');
         colorModeBtn?.classList.add('bg-blue-500', 'text-white', 'shadow-md');
 
         whiteModeBtn?.classList.remove('bg-amber-500', 'text-white', 'shadow-md');
-        whiteModeBtn?.classList.add('bg-white', 'text-slate-700', 'border', 'border-slate-300', 'hover:bg-slate-50');
+        whiteModeBtn?.classList.add('bg-slate-200', 'text-slate-800', 'border', 'border-slate-400', 'hover:bg-slate-300');
 
         colorModeControls?.classList.remove('hidden');
         whiteModeControls?.classList.add('hidden');

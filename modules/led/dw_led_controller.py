@@ -168,6 +168,7 @@ class DWLEDController:
         self._color1 = (255, 0, 0)  # Red (primary)
         self._color2 = (0, 0, 0)  # Black (background/off)
         self._color3 = (0, 0, 255)  # Blue (tertiary)
+        self._white_mode = False  # White mode flag (RGBCCT only)
 
         # Threading
         self._pixels = None
@@ -288,17 +289,22 @@ class DWLEDController:
             try:
                 with self._lock:
                     if self._pixels and self._segment and self._powered_on:
-                        # Get current effect function (allows dynamic effect switching)
-                        effect_func = get_effect(self._current_effect_id)
+                        # Skip effect rendering when in white mode (RGBCCT)
+                        if not self._white_mode:
+                            # Get current effect function (allows dynamic effect switching)
+                            effect_func = get_effect(self._current_effect_id)
 
-                        # Run effect and get delay
-                        delay_ms = effect_func(self._segment)
+                            # Run effect and get delay
+                            delay_ms = effect_func(self._segment)
 
-                        # Update pixels
-                        self._pixels.show()
+                            # Update pixels
+                            self._pixels.show()
 
-                        # Increment call counter
-                        self._segment.call += 1
+                            # Increment call counter
+                            self._segment.call += 1
+                        else:
+                            # In white mode, just maintain white channels (no RGB effects)
+                            delay_ms = 100
                     else:
                         delay_ms = 100  # Idle delay when off
 
@@ -684,6 +690,9 @@ class DWLEDController:
 
         with self._lock:
             if isinstance(self._pixels, _DualWS2811RGBCCTProxy):
+                # Set white mode flag
+                self._white_mode = white_mode
+
                 if white_mode:
                     # White Mode: Turn off RGB, enable WW/CW
                     # Fill all RGB pixels with black
@@ -693,7 +702,7 @@ class DWLEDController:
                     # Auto power on
                     if not self._powered_on:
                         self._powered_on = True
-                    # Ensure effect thread is running
+                    # Ensure effect thread is running (but it will skip effects in white mode)
                     if self._effect_thread is None or not self._effect_thread.is_alive():
                         self._stop_thread.clear()
                         self._effect_thread = threading.Thread(target=self._effect_loop, daemon=True)
