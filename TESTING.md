@@ -24,10 +24,15 @@ Run these commands via SSH to test the original container:
 docker stop dune-weaver
 docker rm dune-weaver
 
-# 2. Pull the original container from upstream
-docker pull tuanchris/dune-weaver:latest
+# 2. Clone the upstream repository (if not already cloned)
+cd ~
+git clone https://github.com/tuanchris/dune-weaver.git dune-weaver-upstream
+cd dune-weaver-upstream
 
-# 3. Run the original container
+# 3. Build the upstream container
+docker build -t dune-weaver-upstream:latest .
+
+# 4. Run the upstream container
 docker run -d \
   --name dune-weaver-original \
   --restart unless-stopped \
@@ -36,10 +41,13 @@ docker run -d \
   -v dune-weaver-state:/app/state \
   --device=/dev/ttyUSB0:/dev/ttyUSB0 \
   --privileged \
-  tuanchris/dune-weaver:latest
+  dune-weaver-upstream:latest
 ```
 
-**Note**: Adjust `--device=/dev/ttyUSB0` if your serial device path is different.
+**Notes**:
+- Adjust `--device=/dev/ttyUSB0` if your serial device path is different
+- The upstream repository doesn't publish pre-built Docker images, so you must build from source
+- This creates a separate directory (`~/dune-weaver-upstream`) so it doesn't interfere with your fork
 
 ## Switch Back to This Fork
 
@@ -139,6 +147,22 @@ Your fork includes these enhancements not present in the upstream version:
 
 ### Additional Features
 See `RGBCCT_SETUP.md` for detailed RGBCCT LED configuration.
+
+## Cleanup
+
+After testing the upstream version, you can remove it to free up space:
+
+```bash
+# Remove the upstream container
+docker stop dune-weaver-original
+docker rm dune-weaver-original
+
+# Remove the upstream Docker image
+docker rmi dune-weaver-upstream:latest
+
+# Optionally remove the upstream repository directory
+rm -rf ~/dune-weaver-upstream
+```
 
 ## Reverting Changes
 
