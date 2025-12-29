@@ -90,12 +90,12 @@ async function initializeDWLedsControls() {
         if (rgbPowerBtn) {
             if (value === 0) {
                 rgbPowerBtn.textContent = 'OFF';
-                rgbPowerBtn.classList.remove('bg-slate-600', 'hover:bg-slate-700');
-                rgbPowerBtn.classList.add('bg-red-600', 'hover:bg-red-700');
+                rgbPowerBtn.classList.remove('bg-amber-500', 'hover:bg-amber-600');
+                rgbPowerBtn.classList.add('bg-gray-400', 'hover:bg-gray-500');
             } else {
                 rgbPowerBtn.textContent = 'ON';
-                rgbPowerBtn.classList.remove('bg-red-600', 'hover:bg-red-700');
-                rgbPowerBtn.classList.add('bg-slate-600', 'hover:bg-slate-700');
+                rgbPowerBtn.classList.remove('bg-gray-400', 'hover:bg-gray-500');
+                rgbPowerBtn.classList.add('bg-amber-500', 'hover:bg-amber-600');
             }
         }
     });
@@ -179,7 +179,7 @@ async function initializeDWLedsControls() {
                 showStatus(`Palette changed`, 'success');
 
                 // Fetch and update effect colors to match the palette
-                await updateEffectColorsFromPalette(paletteId);
+                await updateEffectColorsFromPalette(paletteId, true);
             } else {
                 showStatus(data.error || 'Failed to set palette', 'error');
             }
@@ -291,12 +291,12 @@ async function initializeDWLedsControls() {
         if (whitePowerBtn) {
             if (value === 0) {
                 whitePowerBtn.textContent = 'OFF';
-                whitePowerBtn.classList.remove('bg-slate-600', 'hover:bg-slate-700');
-                whitePowerBtn.classList.add('bg-red-600', 'hover:bg-red-700');
+                whitePowerBtn.classList.remove('bg-amber-500', 'hover:bg-amber-600');
+                whitePowerBtn.classList.add('bg-gray-400', 'hover:bg-gray-500');
             } else {
                 whitePowerBtn.textContent = 'ON';
-                whitePowerBtn.classList.remove('bg-red-600', 'hover:bg-red-700');
-                whitePowerBtn.classList.add('bg-slate-600', 'hover:bg-slate-700');
+                whitePowerBtn.classList.remove('bg-gray-400', 'hover:bg-gray-500');
+                whitePowerBtn.classList.add('bg-amber-500', 'hover:bg-amber-600');
             }
         }
     });
@@ -337,14 +337,14 @@ async function initializeDWLedsControls() {
             rgbLastBrightness = currentBrightness;
             newBrightness = 0;
             rgbPowerBtn.textContent = 'OFF';
-            rgbPowerBtn.classList.remove('bg-slate-600', 'hover:bg-slate-700');
-            rgbPowerBtn.classList.add('bg-red-600', 'hover:bg-red-700');
+            rgbPowerBtn.classList.remove('bg-amber-500', 'hover:bg-amber-600');
+            rgbPowerBtn.classList.add('bg-gray-400', 'hover:bg-gray-500');
         } else {
             // Turn on: restore last value
             newBrightness = rgbLastBrightness;
             rgbPowerBtn.textContent = 'ON';
-            rgbPowerBtn.classList.remove('bg-red-600', 'hover:bg-red-700');
-            rgbPowerBtn.classList.add('bg-slate-600', 'hover:bg-slate-700');
+            rgbPowerBtn.classList.remove('bg-gray-400', 'hover:bg-gray-500');
+            rgbPowerBtn.classList.add('bg-amber-500', 'hover:bg-amber-600');
         }
 
         if (brightnessSlider) brightnessSlider.value = newBrightness;
@@ -376,14 +376,14 @@ async function initializeDWLedsControls() {
             whiteLastBrightness = currentBrightness;
             newBrightness = 0;
             whitePowerBtn.textContent = 'OFF';
-            whitePowerBtn.classList.remove('bg-slate-600', 'hover:bg-slate-700');
-            whitePowerBtn.classList.add('bg-red-600', 'hover:bg-red-700');
+            whitePowerBtn.classList.remove('bg-amber-500', 'hover:bg-amber-600');
+            whitePowerBtn.classList.add('bg-gray-400', 'hover:bg-gray-500');
         } else {
             // Turn on: restore last value
             newBrightness = whiteLastBrightness;
             whitePowerBtn.textContent = 'ON';
-            whitePowerBtn.classList.remove('bg-red-600', 'hover:bg-red-700');
-            whitePowerBtn.classList.add('bg-slate-600', 'hover:bg-slate-700');
+            whitePowerBtn.classList.remove('bg-gray-400', 'hover:bg-gray-500');
+            whitePowerBtn.classList.add('bg-amber-500', 'hover:bg-amber-600');
         }
 
         if (whiteBrightnessSlider) whiteBrightnessSlider.value = newBrightness;
@@ -723,7 +723,7 @@ function updateIdleTimeoutRemainingDisplay(remainingMinutes) {
 }
 
 // Helper function to update effect colors from palette
-async function updateEffectColorsFromPalette(paletteId) {
+async function updateEffectColorsFromPalette(paletteId, applyToHardware = false) {
     try {
         // Fetch the representative colors from the palette
         const response = await fetch(`/api/dw_leds/palette_colors/${paletteId}`);
@@ -749,8 +749,10 @@ async function updateEffectColorsFromPalette(paletteId) {
                 updateColorPickerStyle(color3, data.colors[2]);
             }
 
-            // Apply the colors to the LED controller
-            await applyAllColors(data.colors[0], data.colors[1], data.colors[2]);
+            // Only apply colors to hardware if explicitly requested (e.g., when user changes palette)
+            if (applyToHardware) {
+                await applyAllColors(data.colors[0], data.colors[1], data.colors[2]);
+            }
         }
     } catch (error) {
         console.error('Failed to update colors from palette:', error);
@@ -936,12 +938,12 @@ async function updateWhiteControlsVisibility() {
                 if (whitePowerBtn) {
                     if (config.dw_led_white_brightness === 0) {
                         whitePowerBtn.textContent = 'OFF';
-                        whitePowerBtn.classList.remove('bg-slate-600', 'hover:bg-slate-700');
-                        whitePowerBtn.classList.add('bg-red-600', 'hover:bg-red-700');
+                        whitePowerBtn.classList.remove('bg-amber-500', 'hover:bg-amber-600');
+                        whitePowerBtn.classList.add('bg-gray-400', 'hover:bg-gray-500');
                     } else {
                         whitePowerBtn.textContent = 'ON';
-                        whitePowerBtn.classList.remove('bg-red-600', 'hover:bg-red-700');
-                        whitePowerBtn.classList.add('bg-slate-600', 'hover:bg-slate-700');
+                        whitePowerBtn.classList.remove('bg-gray-400', 'hover:bg-gray-500');
+                        whitePowerBtn.classList.add('bg-amber-500', 'hover:bg-amber-600');
                     }
                 }
             }
@@ -986,12 +988,12 @@ async function checkDWLedsStatus() {
                 if (rgbPowerBtn) {
                     if (data.brightness === 0) {
                         rgbPowerBtn.textContent = 'OFF';
-                        rgbPowerBtn.classList.remove('bg-slate-600', 'hover:bg-slate-700');
-                        rgbPowerBtn.classList.add('bg-red-600', 'hover:bg-red-700');
+                        rgbPowerBtn.classList.remove('bg-amber-500', 'hover:bg-amber-600');
+                        rgbPowerBtn.classList.add('bg-gray-400', 'hover:bg-gray-500');
                     } else {
                         rgbPowerBtn.textContent = 'ON';
-                        rgbPowerBtn.classList.remove('bg-red-600', 'hover:bg-red-700');
-                        rgbPowerBtn.classList.add('bg-slate-600', 'hover:bg-slate-700');
+                        rgbPowerBtn.classList.remove('bg-gray-400', 'hover:bg-gray-500');
+                        rgbPowerBtn.classList.add('bg-amber-500', 'hover:bg-amber-600');
                     }
                 }
             }
