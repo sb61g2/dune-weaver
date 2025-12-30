@@ -163,23 +163,46 @@ async def lifespan(app: FastAPI):
                     controller._pixels._ww = ww
                     controller._pixels._cw = cw
 
-                    # Restore saved brightness level (don't force to 0)
-                    # This ensures UI and controller state match
-                    saved_brightness = state.dw_led_white_brightness / 100.0
-                    controller._pixels._white_brightness = saved_brightness
+                    # ALWAYS start with all LEDs off for a clean slate
+                    # This ensures predictable behavior on powerup
+                    controller._pixels._white_brightness = 0.0
+                    controller._pixels._rgb_brightness = 0.0
+                    controller.brightness = 0.0  # Also set controller brightness
+                    controller._powered_on = False  # Ensure controller is off
 
-                    # CRITICAL: Update the physical pixel buffer with WW/CW values
-                    # This writes the actual brightness-scaled WW/CW values to the buffer
+                    # Clear RGB pixels
+                    for i in range(len(controller._pixels)):
+                        controller._pixels._physical[2 * i] = (0, 0, 0)
+
+                    # Clear white pixels (update with brightness = 0)
                     controller._pixels._update_all_white_channels()
 
-                    # Show the LEDs if brightness > 0 (restore previous state)
-                    if saved_brightness > 0:
-                        controller._pixels.show()
-                        logger.info(f"Restored white channel state: {kelvin}K (WW={ww}, CW={cw}), brightness={int(saved_brightness*100)}%, LEDs ON")
-                    else:
-                        logger.info(f"Loaded white channel settings: {kelvin}K (WW={ww}, CW={cw}), brightness=0%, LEDs OFF")
+                    # CRITICAL: Always call show() to ensure physical LEDs match buffer state
+                    controller._pixels.show()
+
+                    # Update saved state to match (all off)
+                    state.dw_led_white_brightness = 0
+                    state.dw_led_brightness = 0
+                    state.save_state()
+
+                    logger.info(f"Initialized RGBCCT: All LEDs OFF, color temp={kelvin}K (WW={ww}, CW={cw})")
                 else:
                     logger.warning(f"Could not initialize white channels: _pixels missing or not a proxy (has _pixels: {hasattr(controller, '_pixels')})")
+            elif hasattr(state.led_controller, '_controller'):
+                # Standard (non-RGBCCT) DW LEDs initialization
+                controller = state.led_controller._controller
+                if hasattr(controller, '_pixels') and controller._pixels:
+                    # Start with all LEDs off
+                    controller.brightness = 0.0
+                    controller._powered_on = False
+                    controller._pixels.fill((0, 0, 0))
+                    controller._pixels.show()
+
+                    # Update saved state
+                    state.dw_led_brightness = 0
+                    state.save_state()
+
+                    logger.info(f"Initialized standard DW LEDs: All LEDs OFF")
         else:
             state.led_controller = None
             logger.info("LED controller not configured")
