@@ -135,11 +135,13 @@ async def lifespan(app: FastAPI):
             mode_str = " (dual WS2811 RGBCCT)" if state.dw_led_dual_ws2811_rgbcct else ""
             logger.info(f"LED controller initialized: DW LEDs ({state.dw_led_num_leds} LEDs on GPIO{state.dw_led_gpio_pin}, pixel order: {state.dw_led_pixel_order}{mode_str})")
 
-            # Apply saved white channel settings for RGBCCT strips (without powering on)
-            # Note: White settings are stored but not applied until LEDs are powered on
-            # This prevents whites from being on when RGBs are off during initialization
+            # Apply saved white channel settings for RGBCCT strips
             if state.dw_led_dual_ws2811_rgbcct and hasattr(state.led_controller, '_controller'):
                 controller = state.led_controller._controller
+                logger.info(f"RGBCCT mode detected, controller has _pixels: {hasattr(controller, '_pixels')}")
+                if hasattr(controller, '_pixels'):
+                    logger.info(f"  _pixels type: {type(controller._pixels).__name__}, has set_cct: {hasattr(controller._pixels, 'set_cct')}")
+
                 if hasattr(controller, '_pixels') and hasattr(controller._pixels, 'set_cct'):
                     # Set the WW/CW values based on saved temperature, but don't show() yet
                     # Calculate WW/CW from kelvin
@@ -176,6 +178,8 @@ async def lifespan(app: FastAPI):
                         logger.info(f"Restored white channel state: {kelvin}K (WW={ww}, CW={cw}), brightness={int(saved_brightness*100)}%, LEDs ON")
                     else:
                         logger.info(f"Loaded white channel settings: {kelvin}K (WW={ww}, CW={cw}), brightness=0%, LEDs OFF")
+                else:
+                    logger.warning(f"Could not initialize white channels: _pixels missing or not a proxy (has _pixels: {hasattr(controller, '_pixels')})")
         else:
             state.led_controller = None
             logger.info("LED controller not configured")

@@ -36,12 +36,14 @@ class _DualWS2811RGBCCTProxy:
         self.pixel_order = pixel_order
 
         # Global white channel values (applied to all CCT pixels)
-        self._ww = 0  # Warm white (0-255)
-        self._cw = 0  # Cool white (0-255)
+        # Initialize to 4000K (neutral white) at full scale
+        # This ensures white channels work even if temperature isn't set
+        self._ww = 167  # Warm white at 4000K
+        self._cw = 87   # Cool white at 4000K
 
         # Separate brightness controls (0.0 - 1.0)
         self._rgb_brightness = 1.0
-        self._white_brightness = 1.0
+        self._white_brightness = 0.0  # Start with white off
 
         # Keep physical brightness at 1.0 to allow software control
         self._physical.brightness = 1.0
