@@ -157,19 +157,25 @@ async def lifespan(app: FastAPI):
                     ww = int(level_255 * ww_ratio)
                     cw = int(level_255 * (1.0 - ww_ratio))
 
-                    # Set WW/CW values and update pixel buffer (but don't show() yet)
+                    # Set WW/CW values at full scale based on color temperature
                     controller._pixels._ww = ww
                     controller._pixels._cw = cw
-                    # Set brightness to 0 to keep LEDs off during init
-                    controller._pixels._white_brightness = 0.0
+
+                    # Restore saved brightness level (don't force to 0)
+                    # This ensures UI and controller state match
+                    saved_brightness = state.dw_led_white_brightness / 100.0
+                    controller._pixels._white_brightness = saved_brightness
 
                     # CRITICAL: Update the physical pixel buffer with WW/CW values
-                    # This ensures the buffer is initialized so setting brightness > 0 will work
-                    # Note: This writes (0, 0, 0) to all white pixels since _white_brightness = 0
-                    # But it ensures the buffer is in a known state
+                    # This writes the actual brightness-scaled WW/CW values to the buffer
                     controller._pixels._update_all_white_channels()
 
-                    logger.info(f"Loaded white channel settings (buffer initialized, LEDs off): {kelvin}K (WW={ww}, CW={cw}), brightness=0%")
+                    # Show the LEDs if brightness > 0 (restore previous state)
+                    if saved_brightness > 0:
+                        controller._pixels.show()
+                        logger.info(f"Restored white channel state: {kelvin}K (WW={ww}, CW={cw}), brightness={int(saved_brightness*100)}%, LEDs ON")
+                    else:
+                        logger.info(f"Loaded white channel settings: {kelvin}K (WW={ww}, CW={cw}), brightness=0%, LEDs OFF")
         else:
             state.led_controller = None
             logger.info("LED controller not configured")
