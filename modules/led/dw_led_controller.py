@@ -474,9 +474,15 @@ class DWLEDController:
 
         brightness = max(0.0, min(1.0, value / 100.0))
 
+        # Debug logging
+        logger.debug(f"set_white_brightness_level: value={value}, brightness={brightness:.2f}, powered_on={self._powered_on}")
+        if hasattr(self._pixels, '_ww'):
+            logger.debug(f"  White channel values: WW={self._pixels._ww}, CW={self._pixels._cw}, current_brightness={self._pixels._white_brightness:.2f}")
+
         with self._lock:
             if self._pixels and hasattr(self._pixels, 'set_white_brightness'):
                 self._pixels.set_white_brightness(brightness)
+                logger.debug(f"  Called set_white_brightness({brightness:.2f}), LEDs should now be at {int(brightness * 100)}%")
 
             # Auto power on when setting white brightness > 0
             # This ensures white channels show when user sets brightness

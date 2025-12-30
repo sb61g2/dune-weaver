@@ -157,12 +157,19 @@ async def lifespan(app: FastAPI):
                     ww = int(level_255 * ww_ratio)
                     cw = int(level_255 * (1.0 - ww_ratio))
 
-                    # Set values without calling show()
+                    # Set WW/CW values and update pixel buffer (but don't show() yet)
                     controller._pixels._ww = ww
                     controller._pixels._cw = cw
-                    # Start with LEDs off (brightness = 0) to prevent auto-turn on during init
+                    # Set brightness to 0 to keep LEDs off during init
                     controller._pixels._white_brightness = 0.0
-                    logger.info(f"Loaded white channel settings (not applied until power on): {kelvin}K (WW={ww}, CW={cw}), brightness will be controlled via API")
+
+                    # CRITICAL: Update the physical pixel buffer with WW/CW values
+                    # This ensures the buffer is initialized so setting brightness > 0 will work
+                    # Note: This writes (0, 0, 0) to all white pixels since _white_brightness = 0
+                    # But it ensures the buffer is in a known state
+                    controller._pixels._update_all_white_channels()
+
+                    logger.info(f"Loaded white channel settings (buffer initialized, LEDs off): {kelvin}K (WW={ww}, CW={cw}), brightness=0%")
         else:
             state.led_controller = None
             logger.info("LED controller not configured")
