@@ -431,9 +431,27 @@ class DWLEDController:
                     # Standard mode: set global brightness
                     self._pixels.brightness = brightness
 
+            # Auto power on when setting brightness > 0 (like set_color, set_effect, etc.)
+            # Power off when setting brightness to 0
+            if value > 0 and not self._powered_on:
+                self._powered_on = True
+                # Ensure effect thread is running
+                if self._effect_thread is None or not self._effect_thread.is_alive():
+                    self._stop_thread.clear()
+                    self._effect_thread = threading.Thread(target=self._effect_loop, daemon=True)
+                    self._effect_thread.start()
+            elif value == 0:
+                # Turn off when brightness is 0
+                self._powered_on = False
+                # Clear pixels immediately
+                if self._pixels:
+                    self._pixels.fill((0, 0, 0))
+                    self._pixels.show()
+
         return {
             "connected": True,
             "brightness": int(brightness * 100),
+            "power_on": self._powered_on,
             "message": "RGB brightness updated"
         }
 
@@ -460,9 +478,20 @@ class DWLEDController:
             if self._pixels and hasattr(self._pixels, 'set_white_brightness'):
                 self._pixels.set_white_brightness(brightness)
 
+            # Auto power on when setting white brightness > 0
+            # This ensures white channels show when user sets brightness
+            if value > 0 and not self._powered_on:
+                self._powered_on = True
+                # Ensure effect thread is running (needed for RGB effects)
+                if self._effect_thread is None or not self._effect_thread.is_alive():
+                    self._stop_thread.clear()
+                    self._effect_thread = threading.Thread(target=self._effect_loop, daemon=True)
+                    self._effect_thread.start()
+
         return {
             "connected": True,
             "white_brightness": int(brightness * 100),
+            "power_on": self._powered_on,
             "message": "White brightness updated"
         }
 
@@ -800,6 +829,10 @@ class DWLEDController:
             "colors": colors,
             "effect_running": self._effect_thread is not None and self._effect_thread.is_alive()
         }
+
+        # Include white brightness for RGBCCT mode
+        if self._dual_ws2811_rgbcct and self._pixels and hasattr(self._pixels, '_white_brightness'):
+            status["white_brightness"] = int(self._pixels._white_brightness * 100)
 
         # Include error message if not initialized
         if not self._initialized and self._init_error:

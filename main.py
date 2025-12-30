@@ -135,15 +135,32 @@ async def lifespan(app: FastAPI):
             mode_str = " (dual WS2811 RGBCCT)" if state.dw_led_dual_ws2811_rgbcct else ""
             logger.info(f"LED controller initialized: DW LEDs ({state.dw_led_num_leds} LEDs on GPIO{state.dw_led_gpio_pin}, pixel order: {state.dw_led_pixel_order}{mode_str})")
 
-            # Apply saved white channel settings for RGBCCT strips
+            # Apply saved white channel settings for RGBCCT strips (without powering on)
+            # Note: White settings are stored but not applied until LEDs are powered on
+            # This prevents whites from being on when RGBs are off during initialization
             if state.dw_led_dual_ws2811_rgbcct and hasattr(state.led_controller, '_controller'):
                 controller = state.led_controller._controller
-                if hasattr(controller, 'set_color_temperature') and hasattr(controller, 'set_white_brightness_level'):
-                    # Apply saved color temperature
-                    controller.set_color_temperature(state.dw_led_color_temperature, 100)
-                    # Apply saved white brightness
-                    controller.set_white_brightness_level(state.dw_led_white_brightness)
-                    logger.info(f"Applied saved white channel settings: {state.dw_led_color_temperature}K, {state.dw_led_white_brightness}% brightness")
+                if hasattr(controller, '_pixels') and hasattr(controller._pixels, 'set_cct'):
+                    # Set the WW/CW values based on saved temperature, but don't show() yet
+                    # Calculate WW/CW from kelvin
+                    kelvin = state.dw_led_color_temperature
+                    if kelvin <= 2700:
+                        ww_ratio = 1.0
+                    elif kelvin >= 6500:
+                        ww_ratio = 0.0
+                    else:
+                        ww_ratio = 1.0 - (kelvin - 2700) / (6500 - 2700)
+
+                    # Apply white brightness multiplier
+                    level_255 = int((state.dw_led_white_brightness / 100.0) * 255)
+                    ww = int(level_255 * ww_ratio)
+                    cw = int(level_255 * (1.0 - ww_ratio))
+
+                    # Set values without calling show()
+                    controller._pixels._ww = ww
+                    controller._pixels._cw = cw
+                    controller._pixels._white_brightness = state.dw_led_white_brightness / 100.0
+                    logger.info(f"Loaded white channel settings (not applied until power on): {kelvin}K, {state.dw_led_white_brightness}% brightness")
         else:
             state.led_controller = None
             logger.info("LED controller not configured")
@@ -1713,15 +1730,32 @@ async def set_led_config(request: LEDConfigRequest):
         restart_msg = " (restarted)" if hardware_changed else ""
         logger.info(f"DW LEDs configured{restart_msg}: {state.dw_led_num_leds} LEDs on GPIO{state.dw_led_gpio_pin}, pixel order: {state.dw_led_pixel_order}")
 
-        # Apply saved white channel settings for RGBCCT strips
+        # Apply saved white channel settings for RGBCCT strips (without powering on)
+        # Note: White settings are stored but not applied until LEDs are powered on
+        # This prevents whites from being on when RGBs are off during initialization
         if state.dw_led_dual_ws2811_rgbcct and hasattr(state.led_controller, '_controller'):
             controller = state.led_controller._controller
-            if hasattr(controller, 'set_color_temperature') and hasattr(controller, 'set_white_brightness_level'):
-                # Apply saved color temperature
-                controller.set_color_temperature(state.dw_led_color_temperature, 100)
-                # Apply saved white brightness
-                controller.set_white_brightness_level(state.dw_led_white_brightness)
-                logger.info(f"Applied saved white channel settings: {state.dw_led_color_temperature}K, {state.dw_led_white_brightness}% brightness")
+            if hasattr(controller, '_pixels') and hasattr(controller._pixels, 'set_cct'):
+                # Set the WW/CW values based on saved temperature, but don't show() yet
+                # Calculate WW/CW from kelvin
+                kelvin = state.dw_led_color_temperature
+                if kelvin <= 2700:
+                    ww_ratio = 1.0
+                elif kelvin >= 6500:
+                    ww_ratio = 0.0
+                else:
+                    ww_ratio = 1.0 - (kelvin - 2700) / (6500 - 2700)
+
+                # Apply white brightness multiplier
+                level_255 = int((state.dw_led_white_brightness / 100.0) * 255)
+                ww = int(level_255 * ww_ratio)
+                cw = int(level_255 * (1.0 - ww_ratio))
+
+                # Set values without calling show()
+                controller._pixels._ww = ww
+                controller._pixels._cw = cw
+                controller._pixels._white_brightness = state.dw_led_white_brightness / 100.0
+                logger.info(f"Loaded white channel settings (not applied until power on): {kelvin}K, {state.dw_led_white_brightness}% brightness")
 
         # Check if initialization succeeded by checking status
         status = state.led_controller.check_status()
