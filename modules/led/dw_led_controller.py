@@ -443,10 +443,19 @@ class DWLEDController:
             elif value == 0:
                 # Turn off when brightness is 0
                 self._powered_on = False
-                # Clear pixels immediately
+
                 if self._pixels:
-                    self._pixels.fill((0, 0, 0))
-                    self._pixels.show()
+                    if self._dual_ws2811_rgbcct:
+                        # For dual WS2811 RGBCCT mode: Clear RGB pixels only (don't touch white channels)
+                        # We set RGB pixels to (0,0,0) while preserving white channel values
+                        for i in range(len(self._pixels)):
+                            # Write only to RGB chip (physical index 2*i), not white chip (2*i+1)
+                            self._pixels._physical[2 * i] = (0, 0, 0)
+                        self._pixels.show()
+                    else:
+                        # Standard mode: clear all pixels
+                        self._pixels.fill((0, 0, 0))
+                        self._pixels.show()
 
         return {
             "connected": True,
@@ -484,20 +493,19 @@ class DWLEDController:
                 self._pixels.set_white_brightness(brightness)
                 logger.debug(f"  Called set_white_brightness({brightness:.2f}), LEDs should now be at {int(brightness * 100)}%")
 
-            # Auto power on when setting white brightness > 0
-            # This ensures white channels show when user sets brightness
-            if value > 0 and not self._powered_on:
-                self._powered_on = True
-                # Ensure effect thread is running (needed for RGB effects)
-                if self._effect_thread is None or not self._effect_thread.is_alive():
-                    self._stop_thread.clear()
-                    self._effect_thread = threading.Thread(target=self._effect_loop, daemon=True)
-                    self._effect_thread.start()
+            # Note: We don't auto-power on or start the effect thread here
+            # White channels are controlled independently and don't need the RGB effect thread
+            # The set_white_brightness() method already calls show() to update the LEDs
+            # If RGB effects are needed, they should be started via set_effect() or set_color()
+
+        # For power state reporting, consider controller "on" if either RGB or white is active
+        rgb_brightness = self._pixels.brightness if hasattr(self._pixels, 'brightness') else 0
+        is_powered = self._powered_on or brightness > 0 or rgb_brightness > 0
 
         return {
             "connected": True,
             "white_brightness": int(brightness * 100),
-            "power_on": self._powered_on,
+            "power_on": is_powered,
             "message": "White brightness updated"
         }
 
