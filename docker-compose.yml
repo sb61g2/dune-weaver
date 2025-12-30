@@ -26,3 +26,7 @@ services:
       - "/dev/mem:/dev/mem"          # Direct memory access for PWM
     privileged: true  # Required for GPIO/PWM access
     container_name: dune-weaver
+    # Resource limits for Pi Zero 2W (512MB RAM total)
+    mem_limit: 384m        # Limit to 384MB (leave 128MB for system)
+    memswap_limit: 512m    # Include swap limit
+    cpus: 3.0              # Use 3 of 4 cores (leave 1 for system)
