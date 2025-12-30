@@ -709,6 +709,53 @@ function setupEventListeners() {
         });
     }
 
+    // Test LED count - flash each LED sequentially to verify count
+    const testLedCount = document.getElementById('testLedCount');
+    if (testLedCount) {
+        testLedCount.addEventListener('click', async () => {
+            const provider = document.querySelector('input[name="ledProvider"]:checked')?.value;
+
+            if (provider !== 'dw_leds') {
+                showStatusMessage('LED count test is only available for DW LEDs', 'warning');
+                return;
+            }
+
+            const numLeds = parseInt(document.getElementById('dwLedNumLeds')?.value) || 60;
+            const dualWs2811 = document.getElementById('dwLedDualWS2811')?.checked || false;
+
+            const physicalCount = dualWs2811 ? numLeds * 2 : numLeds;
+            const ledType = dualWs2811 ? 'modules (RGB+White pairs)' : 'LEDs';
+
+            if (!confirm(`This will flash each of your ${numLeds} ${ledType} (${physicalCount} physical ICs) one at a time in sequence. Continue?`)) {
+                return;
+            }
+
+            testLedCount.disabled = true;
+            testLedCount.textContent = 'Testing...';
+
+            try {
+                const response = await fetch('/dw_leds/test_count', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    showStatusMessage(data.message || 'LED count test completed. Did all LEDs flash?', 'success');
+                } else {
+                    const errorData = await response.json().catch(() => ({}));
+                    const errorMessage = errorData.detail || 'LED count test failed';
+                    showStatusMessage(errorMessage, 'error');
+                }
+            } catch (error) {
+                showStatusMessage(`LED count test failed: ${error.message}`, 'error');
+            } finally {
+                testLedCount.disabled = false;
+                testLedCount.textContent = 'Test Count';
+            }
+        });
+    }
+
     // Update software
     const updateSoftware = document.getElementById('updateSoftware');
     if (updateSoftware) {

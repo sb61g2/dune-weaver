@@ -151,16 +151,18 @@ async def lifespan(app: FastAPI):
                     else:
                         ww_ratio = 1.0 - (kelvin - 2700) / (6500 - 2700)
 
-                    # Apply white brightness multiplier
-                    level_255 = int((state.dw_led_white_brightness / 100.0) * 255)
+                    # Set WW/CW at FULL SCALE (255) based on color temperature
+                    # The _white_brightness multiplier will handle the actual brightness level
+                    level_255 = 255  # Full scale - brightness is controlled separately
                     ww = int(level_255 * ww_ratio)
                     cw = int(level_255 * (1.0 - ww_ratio))
 
                     # Set values without calling show()
                     controller._pixels._ww = ww
                     controller._pixels._cw = cw
-                    controller._pixels._white_brightness = state.dw_led_white_brightness / 100.0
-                    logger.info(f"Loaded white channel settings (not applied until power on): {kelvin}K, {state.dw_led_white_brightness}% brightness")
+                    # Start with LEDs off (brightness = 0) to prevent auto-turn on during init
+                    controller._pixels._white_brightness = 0.0
+                    logger.info(f"Loaded white channel settings (not applied until power on): {kelvin}K (WW={ww}, CW={cw}), brightness will be controlled via API")
         else:
             state.led_controller = None
             logger.info("LED controller not configured")
@@ -2343,6 +2345,97 @@ async def dw_leds_status():
     except Exception as e:
         logger.error(f"Failed to check DW LED status: {str(e)}")
         return {"connected": False, "message": str(e)}
+
+@app.post("/dw_leds/test_count")
+async def dw_leds_test_count():
+    """
+    Test LED count by flashing each LED sequentially.
+    For RGBCCT dual WS2811 mode, flashes RGB then white for each module.
+    """
+    if not state.led_controller or state.led_provider != "dw_leds":
+        raise HTTPException(status_code=400, detail="DW LEDs not configured")
+
+    try:
+        controller = state.led_controller._controller
+        if not controller:
+            raise HTTPException(status_code=400, detail="LED controller not initialized")
+
+        # Run test in background to avoid blocking
+        import asyncio
+
+        async def run_test():
+            try:
+                # Get the pixels object (either standard or dual WS2811 proxy)
+                pixels = controller._pixels
+                if not pixels:
+                    logger.error("No pixels object available")
+                    return
+
+                num_leds = len(pixels)
+                is_dual_ws2811 = controller._dual_ws2811_rgbcct
+
+                logger.info(f"Starting LED count test: {num_leds} logical LEDs, dual_ws2811={is_dual_ws2811}")
+
+                # Save current power state
+                was_powered = controller._powered_on
+
+                # Temporarily power on if needed
+                if not was_powered:
+                    controller._powered_on = True
+
+                # Flash each LED one at a time
+                for i in range(num_leds):
+                    # Clear all LEDs
+                    pixels.fill((0, 0, 0))
+
+                    if is_dual_ws2811:
+                        # For dual WS2811: flash RGB, then white
+                        # RGB flash (white)
+                        pixels[i] = (255, 255, 255)
+                        pixels.show()
+                        await asyncio.sleep(0.3)
+
+                        # White flash (if supported)
+                        if hasattr(pixels, 'set_cct'):
+                            pixels[i] = (0, 0, 0)  # Turn off RGB
+                            # Temporarily set white channels high for this test
+                            old_ww, old_cw = pixels._ww, pixels._cw
+                            old_wb = pixels._white_brightness
+                            pixels._ww = 255
+                            pixels._cw = 255
+                            pixels._white_brightness = 1.0
+                            pixels._update_all_white_channels()
+                            pixels.show()
+                            await asyncio.sleep(0.3)
+                            # Restore original white values
+                            pixels._ww, pixels._cw = old_ww, old_cw
+                            pixels._white_brightness = old_wb
+                    else:
+                        # Standard strip: just flash white
+                        pixels[i] = (255, 255, 255)
+                        pixels.show()
+                        await asyncio.sleep(0.2)
+
+                # Clear all at end
+                pixels.fill((0, 0, 0))
+                pixels.show()
+
+                # Restore power state
+                controller._powered_on = was_powered
+
+                logger.info("LED count test completed")
+
+            except Exception as e:
+                logger.error(f"Error in LED count test: {e}")
+
+        # Start the test task
+        asyncio.create_task(run_test())
+
+        return {"success": True, "message": f"Testing {len(controller._pixels)} LEDs. Watch for sequential flashing."}
+
+    except Exception as e:
+        logger.error(f"Failed to start LED count test: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/dw_leds/power")
 async def dw_leds_power(request: dict):

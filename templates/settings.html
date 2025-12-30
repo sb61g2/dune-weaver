@@ -798,7 +798,17 @@ input:checked + .slider:before {
         </div>
 
         <label class="flex flex-col gap-1.5">
-          <span class="text-slate-700 text-sm font-medium leading-normal">Number of LEDs</span>
+          <div class="flex items-center justify-between">
+            <span class="text-slate-700 text-sm font-medium leading-normal">Number of LEDs</span>
+            <button
+              type="button"
+              id="testLedCount"
+              class="text-xs text-sky-600 hover:text-sky-700 font-medium px-2 py-1 rounded hover:bg-sky-50 transition-colors"
+              title="Flash each LED one at a time to verify count"
+            >
+              Test Count
+            </button>
+          </div>
           <input
             id="dwLedNumLeds"
             type="number"
@@ -809,7 +819,8 @@ input:checked + .slider:before {
             max="1000"
           />
           <p class="text-xs text-slate-500">
-            Total number of LEDs in your WS281x strip
+            <strong>For standard strips:</strong> Total number of LEDs/pixels.<br>
+            <strong>For Dual WS2811 RGBCCT strips:</strong> Number of <em>modules</em> (RGB+White pairs), NOT total ICs. Example: 9 modules (18 physical ICs) = enter <strong>9</strong>.
           </p>
         </label>
         <label class="flex flex-col gap-1.5">
