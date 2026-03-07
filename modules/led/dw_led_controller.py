@@ -7,34 +7,218 @@ import time
 import logging
 from typing import Optional, Dict, List, Tuple
 from .dw_leds.segment import Segment
-from .dw_leds.effects.basic_effects import get_effect, get_all_effects
+from .dw_leds.effects.basic_effects import get_effect, get_all_effects, FRAMETIME
 from .dw_leds.utils.palettes import get_palette_name, PALETTE_NAMES
 from .dw_leds.utils.colors import rgb_to_color
 
 logger = logging.getLogger(__name__)
 
 
+class _DualWS2811RGBCCTProxy:
+    """
+    Proxy for dual WS2811 RGBCCT strips where each logical segment uses TWO physical pixels:
+    - Physical pixel 2*i: RGB (3 bytes)
+    - Physical pixel 2*i+1: CCT white channels (2-3 bytes for WW/CW)
+
+    This allows the effect engine to work with N logical RGB pixels while the strip
+    actually has 2N physical pixels.
+    """
+
+    def __init__(self, physical_pixels, logical_count: int, pixel_order: str):
+        """
+        Args:
+            physical_pixels: The actual NeoPixel object (with 2*logical_count pixels)
+            logical_count: Number of logical RGB segments
+            pixel_order: RGB channel order (GRB, RGB, BRG, etc.)
+        """
+        self._physical = physical_pixels
+        self._logical_count = logical_count
+        self.pixel_order = pixel_order
+
+        # Global white channel values (applied to all CCT pixels)
+        # Initialize to 4000K (neutral white) at full scale
+        # This ensures white channels work even if temperature isn't set
+        self._ww = 167  # Warm white at 4000K
+        self._cw = 87   # Cool white at 4000K
+
+        # Separate brightness controls (0.0 - 1.0)
+        self._rgb_brightness = 1.0
+        self._white_brightness = 0.0  # Start with white off
+
+        # Power state - when False, all channel output is zeroed
+        self._powered_on = True
+
+        # Keep physical brightness at 1.0 to allow software control
+        self._physical.brightness = 1.0
+
+    def __len__(self):
+        """Return logical count (not physical)"""
+        return self._logical_count
+
+    def __getitem__(self, index):
+        """Get logical RGB pixel at index"""
+        if index < 0 or index >= self._logical_count:
+            return (0, 0, 0)
+        # Read from physical pixel 2*index (RGB chip)
+        return self._physical[2 * index]
+
+    def __setitem__(self, index, value):
+        """
+        Set logical RGB pixel at index.
+        Only writes to RGB chip (physical 2*index). White chips are managed
+        independently via _update_all_white_channels() and write_white_channel().
+        """
+        if index < 0 or index >= self._logical_count:
+            return
+
+        # Apply RGB brightness scaling
+        if isinstance(value, tuple) and len(value) >= 3:
+            r, g, b = value[0], value[1], value[2]
+            r = int(r * self._rgb_brightness)
+            g = int(g * self._rgb_brightness)
+            b = int(b * self._rgb_brightness)
+            scaled_value = (r, g, b)
+        else:
+            scaled_value = value
+
+        # Write RGB to first chip only (physical index 2*i)
+        self._physical[2 * index] = scaled_value
+
+    def show(self):
+        """Update all physical pixels"""
+        self._physical.show()
+
+    def fill(self, color):
+        """Fill all logical pixels with color"""
+        for i in range(self._logical_count):
+            self[i] = color
+
+    def deinit(self):
+        """Deinitialize the physical NeoPixel object"""
+        if hasattr(self._physical, 'deinit'):
+            self._physical.deinit()
+
+    def stop(self):
+        """Stop/deinitialize (alias for compatibility)"""
+        self.deinit()
+
+    def set_cct(self, ww: int = 0, cw: int = 0):
+        """
+        Set global white channel values (0-255 each).
+        These are applied to all CCT pixels immediately.
+        """
+        self._ww = max(0, min(255, ww))
+        self._cw = max(0, min(255, cw))
+        # Update all white channel pixels immediately
+        self._update_all_white_channels()
+
+    def set_white_temperature(self, kelvin: int = 4000, level: int = 255):
+        """
+        Set white light by color temperature and brightness.
+
+        Args:
+            kelvin: Color temperature (2700-6500K)
+            level: Overall white brightness (0-255)
+        """
+        # Map kelvin to WW/CW balance
+        if kelvin <= 2700:
+            ww_ratio = 1.0
+        elif kelvin >= 6500:
+            ww_ratio = 0.0
+        else:
+            # Linear interpolation between 2700K (all WW) and 6500K (all CW)
+            ww_ratio = 1.0 - (kelvin - 2700) / (6500 - 2700)
+
+        self._ww = int(level * ww_ratio)
+        self._cw = int(level * (1.0 - ww_ratio))
+
+        # Update all white channel pixels immediately
+        self._update_all_white_channels()
+
+    def _update_all_white_channels(self):
+        """Update all WW/CW pixels (odd-numbered physical pixels) with current white values"""
+        # Output zeros when powered off
+        if not self._powered_on:
+            ww_scaled = 0
+            cw_scaled = 0
+        else:
+            ww_scaled = int(self._ww * self._white_brightness)
+            cw_scaled = int(self._cw * self._white_brightness)
+
+        for i in range(self._logical_count):
+            # Write WW/CW to second chip (physical index 2*i+1)
+            # Pack as (CW, WW, 0) - channels are swapped on hardware
+            self._physical[2 * i + 1] = (cw_scaled, ww_scaled, 0)
+
+    def write_white_channel(self, index: int, ww: float, cw: float):
+        """
+        Write white channel values for a single pixel, respecting power state and brightness.
+        For use by per-pixel white effects (Chase, Colorloop) instead of direct _physical writes.
+        """
+        if not self._powered_on:
+            self._physical[2 * index + 1] = (0, 0, 0)
+        else:
+            ww_scaled = int(ww * self._white_brightness)
+            cw_scaled = int(cw * self._white_brightness)
+            self._physical[2 * index + 1] = (cw_scaled, ww_scaled, 0)
+
+    @property
+    def brightness(self):
+        """Get RGB brightness (for backward compatibility)"""
+        return self._rgb_brightness
+
+    @brightness.setter
+    def brightness(self, value):
+        """Set RGB brightness (for backward compatibility)"""
+        self.set_rgb_brightness(value)
+
+    def set_rgb_brightness(self, value: float):
+        """
+        Set RGB brightness independently
+        Args:
+            value: Brightness 0.0-1.0
+        """
+        self._rgb_brightness = max(0.0, min(1.0, value))
+        # Trigger update by re-rendering current frame
+        # (effect loop will call show() which updates pixels)
+
+    def set_white_brightness(self, value: float):
+        """
+        Set white channel brightness independently
+        Args:
+            value: Brightness 0.0-1.0
+        """
+        self._white_brightness = max(0.0, min(1.0, value))
+        # Update white channels immediately
+        self._update_all_white_channels()
+        self._physical.show()
+
+
 class DWLEDController:
     """Dune Weaver LED Controller for NeoPixel LED strips"""
 
     def __init__(self, num_leds: int = 60, gpio_pin: int = 18, brightness: float = 0.35,
-                 pixel_order: str = "GRB", speed: int = 128, intensity: int = 128):
+                 pixel_order: str = "GRB", speed: int = 128, intensity: int = 128,
+                 dual_ws2811_rgbcct: bool = False):
         """
         Initialize Dune Weaver LED controller
 
         Args:
-            num_leds: Number of LEDs in the strip
+            num_leds: Number of logical LED segments (for dual WS2811, actual physical count is 2x)
             gpio_pin: GPIO pin number (BCM numbering: 12, 13, 18, or 19)
             brightness: Global brightness (0.0 - 1.0)
-            pixel_order: Pixel color order (GRB, RGB, RGBW, GRBW)
+            pixel_order: Pixel color order (RGB, GRB, BRG for 3-byte)
             speed: Effect speed 0-255 (default: 128)
             intensity: Effect intensity 0-255 (default: 128)
+            dual_ws2811_rgbcct: Enable dual WS2811 mode for RGBCCT strips
+                When True: each logical segment uses 2 physical pixels (RGB + CCT)
         """
         self.num_leds = num_leds
         self.gpio_pin = gpio_pin
         self.brightness = brightness
         self.pixel_order = pixel_order
-        self.is_rgbw = 'W' in pixel_order.upper()
+        self._dual_ws2811_rgbcct = dual_ws2811_rgbcct
+        self.is_rgbw = (not dual_ws2811_rgbcct) and ('W' in pixel_order.upper())
         self._off_color = (0, 0, 0, 0) if self.is_rgbw else (0, 0, 0)
 
         # State
@@ -47,6 +231,14 @@ class DWLEDController:
         self._color2 = (0, 0, 0)  # Black (background/off)
         self._color3 = (0, 0, 255)  # Blue (tertiary)
 
+        # White effect state (RGBCCT mode only)
+        self._white_effect_id = None  # None = static white, 0-3 = active effect
+        self._white_effect = None  # Active white effect instance
+        self._white_effect_thread = None  # Dedicated thread for white effects
+        self._stop_white_thread = threading.Event()  # Stop signal for white effect thread
+        self._white_speed = 128  # White effect speed 0-255
+        self._white_intensity = 128  # White effect intensity 0-255
+
         # Threading
         self._pixels = None
         self._segment = None
@@ -55,6 +247,30 @@ class DWLEDController:
         self._lock = threading.Lock()
         self._initialized = False
         self._init_error = None  # Store initialization error message
+
+    def _get_bytes_per_pixel(self, pixel_order: str) -> int:
+        """
+        Determine bytes per pixel based on pixel order string.
+
+        Args:
+            pixel_order: Pixel order string (e.g., GRB, GRBW, GRBWW)
+
+        Returns:
+            Number of bytes per pixel (3, 4, or 5)
+        """
+        # Count unique color channels in the pixel order string
+        # Standard channels: R, G, B, W
+        # For RGBCCT (dual white): second W represents cool white
+        order_upper = pixel_order.upper()
+
+        # RGBCCT strips with dual WS2811 use 5 bytes (R, G, B, WW, CW)
+        # We detect this by looking for "WW" in the pixel order or length >= 5
+        if "WW" in order_upper or len(order_upper) >= 5:
+            return 5
+        elif "W" in order_upper or len(order_upper) == 4:
+            return 4
+        else:
+            return 3
 
     def _initialize_hardware(self):
         """Lazy initialization of NeoPixel hardware"""
@@ -109,13 +325,34 @@ class DWLEDController:
             board_pin = pin_map[self.gpio_pin]
 
             # Initialize NeoPixel strip
-            self._pixels = neopixel_module.NeoPixel(
+            # For dual WS2811 RGBCCT strips: create 2x physical pixels and wrap in proxy
+
+            # Determine physical pixel count
+            physical_leds = self.num_leds * 2 if self._dual_ws2811_rgbcct else self.num_leds
+
+            if self._dual_ws2811_rgbcct:
+                # RGBCCT must use 3-byte pixel order (RGB/GRB chips, not RGBW)
+                pixel_order_to_use = self.pixel_order[:3] if len(self.pixel_order) > 3 else self.pixel_order
+                logger.info(f"Dual WS2811 RGBCCT mode: {self.num_leds} logical segments → {physical_leds} physical pixels, pixel order '{pixel_order_to_use}'")
+            else:
+                # Standard mode: preserve full pixel order (supports RGBW strips)
+                pixel_order_to_use = self.pixel_order
+                logger.info(f"Standard RGB mode: {physical_leds} pixels, pixel order '{pixel_order_to_use}'")
+
+            # Create physical NeoPixel object (using neopixel_module for Pi4/Pi5 compatibility)
+            physical_pixels = neopixel_module.NeoPixel(
                 board_pin,
-                self.num_leds,
+                physical_leds,
                 brightness=self.brightness,
                 auto_write=False,
-                pixel_order=self.pixel_order
+                pixel_order=pixel_order_to_use
             )
+
+            # Wrap in proxy if dual WS2811 mode
+            if self._dual_ws2811_rgbcct:
+                self._pixels = _DualWS2811RGBCCTProxy(physical_pixels, self.num_leds, pixel_order_to_use)
+            else:
+                self._pixels = physical_pixels
 
             # Create segment for the entire strip
             self._segment = Segment(self._pixels, 0, self.num_leds, is_rgbw=self.is_rgbw)
@@ -190,8 +427,25 @@ class DWLEDController:
 
             # Turn off all pixels immediately when powering off
             if not self._powered_on and self._pixels:
-                self._pixels.fill(self._off_color)
-                self._pixels.show()
+                if self._dual_ws2811_rgbcct and isinstance(self._pixels, _DualWS2811RGBCCTProxy):
+                    # Gate proxy output: _update_all_white_channels writes zeros when _powered_on=False
+                    self._pixels._powered_on = False
+                    self._pixels._update_all_white_channels()
+                    # Also clear all RGB chips
+                    for i in range(self._pixels._logical_count):
+                        self._pixels._physical[2 * i] = (0, 0, 0)
+                    self._pixels._physical.show()
+                else:
+                    self._pixels.fill(self._off_color)
+                    self._pixels.show()
+
+            # Restore state when powering on
+            if self._powered_on and self._pixels:
+                if self._dual_ws2811_rgbcct and isinstance(self._pixels, _DualWS2811RGBCCTProxy):
+                    # Re-enable proxy output and restore white channels
+                    self._pixels._powered_on = True
+                    self._pixels._update_all_white_channels()
+                    self._pixels._physical.show()
 
             # Start effect thread if not running
             if self._powered_on and (self._effect_thread is None or not self._effect_thread.is_alive()):
@@ -207,7 +461,19 @@ class DWLEDController:
 
     def set_brightness(self, value: int) -> Dict:
         """
-        Set global brightness
+        Set RGB brightness (for backward compatibility)
+
+        Args:
+            value: Brightness 0-100
+
+        Returns:
+            Dict with status
+        """
+        return self.set_rgb_brightness(value)
+
+    def set_rgb_brightness(self, value: int) -> Dict:
+        """
+        Set RGB brightness independently
 
         Args:
             value: Brightness 0-100
@@ -224,12 +490,89 @@ class DWLEDController:
         with self._lock:
             self.brightness = brightness
             if self._pixels:
-                self._pixels.brightness = brightness
+                if self._dual_ws2811_rgbcct and hasattr(self._pixels, 'set_rgb_brightness'):
+                    # Use separate RGB brightness for dual WS2811 mode
+                    self._pixels.set_rgb_brightness(brightness)
+                else:
+                    # Standard mode: set global brightness
+                    self._pixels.brightness = brightness
+
+            # Auto power on when setting brightness > 0 (like set_color, set_effect, etc.)
+            # Power off when setting brightness to 0
+            if value > 0 and not self._powered_on:
+                self._powered_on = True
+                # Ensure effect thread is running
+                if self._effect_thread is None or not self._effect_thread.is_alive():
+                    self._stop_thread.clear()
+                    self._effect_thread = threading.Thread(target=self._effect_loop, daemon=True)
+                    self._effect_thread.start()
+            elif value == 0:
+                # Turn off when brightness is 0
+                self._powered_on = False
+
+                if self._pixels:
+                    if self._dual_ws2811_rgbcct:
+                        # For dual WS2811 RGBCCT mode: Clear RGB pixels only (don't touch white channels)
+                        # We set RGB pixels to (0,0,0) while preserving white channel values
+                        for i in range(len(self._pixels)):
+                            # Write only to RGB chip (physical index 2*i), not white chip (2*i+1)
+                            self._pixels._physical[2 * i] = (0, 0, 0)
+                        self._pixels.show()
+                    else:
+                        # Standard mode: clear all pixels
+                        self._pixels.fill((0, 0, 0))
+                        self._pixels.show()
 
         return {
             "connected": True,
             "brightness": int(brightness * 100),
-            "message": "Brightness updated"
+            "power_on": self._powered_on,
+            "message": "RGB brightness updated"
+        }
+
+    def set_white_brightness_level(self, value: int) -> Dict:
+        """
+        Set white channel brightness independently (RGBCCT mode only)
+
+        Args:
+            value: Brightness 0-100
+
+        Returns:
+            Dict with status
+        """
+        if not self._initialized:
+            if not self._initialize_hardware():
+                return {"connected": False, "error": self._init_error or "Hardware not initialized"}
+
+        if not self._dual_ws2811_rgbcct:
+            return {"connected": False, "error": "White brightness control requires RGBCCT mode"}
+
+        brightness = max(0.0, min(1.0, value / 100.0))
+
+        # Debug logging
+        logger.debug(f"set_white_brightness_level: value={value}, brightness={brightness:.2f}, powered_on={self._powered_on}")
+        if hasattr(self._pixels, '_ww'):
+            logger.debug(f"  White channel values: WW={self._pixels._ww}, CW={self._pixels._cw}, current_brightness={self._pixels._white_brightness:.2f}")
+
+        with self._lock:
+            if self._pixels and hasattr(self._pixels, 'set_white_brightness'):
+                self._pixels.set_white_brightness(brightness)
+                logger.debug(f"  Called set_white_brightness({brightness:.2f}), LEDs should now be at {int(brightness * 100)}%")
+
+            # Note: We don't auto-power on or start the effect thread here
+            # White channels are controlled independently and don't need the RGB effect thread
+            # The set_white_brightness() method already calls show() to update the LEDs
+            # If RGB effects are needed, they should be started via set_effect() or set_color()
+
+        # For power state reporting, consider controller "on" if either RGB or white is active
+        rgb_brightness = self._pixels.brightness if hasattr(self._pixels, 'brightness') else 0
+        is_powered = self._powered_on or brightness > 0 or rgb_brightness > 0
+
+        return {
+            "connected": True,
+            "white_brightness": int(brightness * 100),
+            "power_on": is_powered,
+            "message": "White brightness updated"
         }
 
     def set_color(self, r: int, g: int, b: int) -> Dict:
@@ -470,6 +813,63 @@ class DWLEDController:
             "message": "Intensity updated"
         }
 
+    def set_color_temperature(self, kelvin: int, level: int = 100) -> Dict:
+        """
+        Set white color temperature (RGBCCT dual WS2811 mode only)
+
+        Args:
+            kelvin: Color temperature in Kelvin (2700-6500)
+            level: White brightness level 0-100
+
+        Returns:
+            Dict with status
+        """
+        if not self._initialized:
+            if not self._initialize_hardware():
+                return {"connected": False, "error": self._init_error or "Hardware not initialized"}
+
+        if not self._dual_ws2811_rgbcct:
+            return {
+                "connected": True,
+                "error": "Color temperature control requires Dual WS2811 RGBCCT mode"
+            }
+
+        # Clamp values
+        kelvin = max(2700, min(6500, kelvin))
+        level = max(0, min(100, level))
+
+        # Convert level 0-100 to 0-255
+        level_255 = int((level / 100.0) * 255)
+
+        with self._lock:
+            if isinstance(self._pixels, _DualWS2811RGBCCTProxy):
+                self._pixels.set_white_temperature(kelvin, level_255)
+                # Update all pixels to apply new white temperature
+                # Always show() regardless of RGB power state - white channels are independent
+                self._pixels.show()
+
+        return {
+            "connected": True,
+            "color_temperature": kelvin,
+            "white_level": level,
+            "message": f"Color temperature set to {kelvin}K at {level}% brightness"
+        }
+
+    def set_white_mode(self, white_mode: bool, kelvin: int = 4000, level: int = 50) -> Dict:
+        """
+        Legacy function for backward compatibility - just sets color temperature
+
+        Args:
+            white_mode: Ignored (kept for API compatibility)
+            kelvin: Color temperature in Kelvin (2700-6500)
+            level: White brightness level 0-100
+
+        Returns:
+            Dict with status
+        """
+        # Simply delegate to set_color_temperature
+        return self.set_color_temperature(kelvin, level)
+
     def get_effects(self) -> List[Tuple[int, str]]:
         """Get list of all available effects"""
         return get_all_effects()
@@ -477,6 +877,155 @@ class DWLEDController:
     def get_palettes(self) -> List[Tuple[int, str]]:
         """Get list of all available palettes"""
         return [(i, name) for i, name in enumerate(PALETTE_NAMES)]
+
+    def get_white_effects(self) -> List[Tuple[int, str]]:
+        """
+        Get list of all available white effects (RGBCCT mode only)
+
+        Returns:
+            List of tuples (effect_id, effect_name)
+        """
+        try:
+            from .dw_leds.effects.white_effects import get_all_white_effects
+            return get_all_white_effects()
+        except Exception as e:
+            logger.error(f"Failed to load white effects: {e}")
+            return []
+
+    def set_white_effect(self, effect_id: int, speed: Optional[int] = None,
+                        intensity: Optional[int] = None, base_temperature: Optional[int] = None) -> Dict:
+        """
+        Set active white effect (RGBCCT mode only)
+
+        Args:
+            effect_id: Effect ID (0-3)
+            speed: Optional speed override (0-255)
+            intensity: Optional intensity override (0-255)
+            base_temperature: Optional base temperature for effects that use it (2700-6500K)
+
+        Returns:
+            Dict with status
+        """
+        if not self._initialized:
+            if not self._initialize_hardware():
+                return {"connected": False, "error": self._init_error or "Hardware not initialized"}
+
+        if not self._dual_ws2811_rgbcct:
+            return {
+                "connected": False,
+                "error": "White effects require Dual WS2811 RGBCCT mode"
+            }
+
+        # Import white effects module
+        try:
+            from .dw_leds.effects.white_effects import get_white_effect
+        except Exception as e:
+            return {
+                "connected": False,
+                "error": f"Failed to load white effects: {str(e)}"
+            }
+
+        # Validate effect ID
+        if effect_id < 0 or effect_id > 5:
+            return {
+                "connected": False,
+                "error": f"Invalid white effect ID: {effect_id}"
+            }
+
+        # Update parameters if provided
+        if speed is not None:
+            self._white_speed = max(0, min(255, speed))
+        if intensity is not None:
+            self._white_intensity = max(0, min(255, intensity))
+
+        with self._lock:
+            # Stop existing white effect if running
+            if self._white_effect_thread and self._white_effect_thread.is_alive():
+                self._stop_white_thread.set()
+                self._white_effect_thread.join(timeout=1.0)
+
+            # Create white effect instance
+            effect_class = get_white_effect(effect_id)
+            self._white_effect = effect_class(self._pixels)
+            self._white_effect.speed = self._white_speed
+            self._white_effect.intensity = self._white_intensity
+
+            # Set base temperature if provided
+            if base_temperature is not None:
+                self._white_effect.base_temperature = max(2700, min(6500, base_temperature))
+
+            self._white_effect_id = effect_id
+
+            # Start white effect thread
+            self._stop_white_thread.clear()
+            self._white_effect_thread = threading.Thread(target=self._white_effect_loop, daemon=True)
+            self._white_effect_thread.start()
+
+            logger.info(f"Started white effect {effect_id} with speed={self._white_speed}, intensity={self._white_intensity}")
+
+        effect_names = {0: "Temperature Sweep", 1: "Temperature Pulse",
+                       2: "Brightness Fade", 3: "Dual Channel"}
+
+        return {
+            "connected": True,
+            "white_effect_id": effect_id,
+            "white_effect_name": effect_names.get(effect_id, "Unknown"),
+            "speed": self._white_speed,
+            "intensity": self._white_intensity,
+            "message": f"White effect set to {effect_names.get(effect_id, 'Unknown')}"
+        }
+
+    def stop_white_effect(self) -> Dict:
+        """
+        Stop white effect and return to static white
+
+        Returns:
+            Dict with status
+        """
+        if not self._dual_ws2811_rgbcct:
+            return {
+                "connected": False,
+                "error": "White effects require Dual WS2811 RGBCCT mode"
+            }
+
+        with self._lock:
+            # Stop white effect thread
+            if self._white_effect_thread and self._white_effect_thread.is_alive():
+                self._stop_white_thread.set()
+                self._white_effect_thread.join(timeout=1.0)
+
+            self._white_effect_id = None
+            self._white_effect = None
+
+            logger.info("Stopped white effect, returned to static white")
+
+        return {
+            "connected": True,
+            "white_effect_id": None,
+            "message": "White effect stopped"
+        }
+
+    def _white_effect_loop(self):
+        """White effect rendering loop (runs in dedicated thread)"""
+        logger.info("White effect loop started")
+
+        try:
+            while not self._stop_white_thread.is_set():
+                if self._white_effect:
+                    # Acquire the same lock used by the RGB effect loop to prevent
+                    # concurrent hardware writes while still allowing both to run
+                    with self._lock:
+                        delay_ms = self._white_effect.update()
+
+                    # Sleep for the delay (convert ms to seconds)
+                    time.sleep(delay_ms / 1000.0)
+                else:
+                    # No effect, just sleep
+                    time.sleep(0.1)
+        except Exception as e:
+            logger.error(f"Error in white effect loop: {e}")
+        finally:
+            logger.info("White effect loop stopped")
 
     def check_status(self) -> Dict:
         """Get current controller status"""
@@ -510,6 +1059,17 @@ class DWLEDController:
             "effect_running": self._effect_thread is not None and self._effect_thread.is_alive()
         }
 
+        # Include white brightness for RGBCCT mode
+        if self._dual_ws2811_rgbcct and self._pixels and hasattr(self._pixels, '_white_brightness'):
+            status["white_brightness"] = int(self._pixels._white_brightness * 100)
+
+        # Include white effect status for RGBCCT mode
+        if self._dual_ws2811_rgbcct:
+            status["white_effect_id"] = self._white_effect_id
+            status["white_effect_running"] = self._white_effect_thread is not None and self._white_effect_thread.is_alive()
+            status["white_speed"] = self._white_speed
+            status["white_intensity"] = self._white_intensity
+
         # Include error message if not initialized
         if not self._initialized and self._init_error:
             status["error"] = self._init_error
@@ -521,6 +1081,11 @@ class DWLEDController:
         self._stop_thread.set()
         if self._effect_thread and self._effect_thread.is_alive():
             self._effect_thread.join(timeout=1.0)
+
+        # Stop white effect thread
+        self._stop_white_thread.set()
+        if self._white_effect_thread and self._white_effect_thread.is_alive():
+            self._white_effect_thread.join(timeout=1.0)
 
         with self._lock:
             if self._pixels:
@@ -544,9 +1109,24 @@ def effect_loading(controller: DWLEDController) -> bool:
         return False
 
 
-def effect_idle(controller: DWLEDController, effect_settings: Optional[dict] = None) -> bool:
+def effect_idle(controller: DWLEDController, effect_settings: Optional[dict] = None,
+                white_effect_settings: Optional[dict] = None) -> bool:
     """Show idle effect with full settings. If no effect configured, plays Rainbow with current parameters."""
     try:
+        # Apply white effect if configured (RGBCCT mode only) — runs concurrently with RGB
+        if white_effect_settings and isinstance(white_effect_settings, dict) and controller._dual_ws2811_rgbcct:
+            effect_id = white_effect_settings.get("effect_id")
+            if effect_id is not None:
+                speed = white_effect_settings.get("speed", 128)
+                intensity = white_effect_settings.get("intensity", 128)
+                base_temperature = white_effect_settings.get("base_temperature", 4000)
+                controller.set_white_effect(effect_id, speed=speed, intensity=intensity,
+                                            base_temperature=base_temperature)
+
+        # Apply RGB effect only if RGB brightness is non-zero
+        if controller.brightness <= 0:
+            return True
+
         controller.set_power(1)
 
         if effect_settings and isinstance(effect_settings, dict):
@@ -610,14 +1190,31 @@ def effect_connected(controller: DWLEDController) -> bool:
         return False
 
 
-def effect_playing(controller: DWLEDController, effect_settings: Optional[dict] = None) -> bool:
-    """Show playing effect with full settings"""
+def effect_playing(controller: DWLEDController, effect_settings: Optional[dict] = None,
+                   white_effect_settings: Optional[dict] = None) -> bool:
+    """
+    Show playing effect with full settings
+
+    Args:
+        controller: DW LED controller instance
+        effect_settings: RGB effect settings dict (for compatibility)
+        white_effect_settings: White effect settings dict (for RGBCCT mode)
+    """
     try:
-        if effect_settings and isinstance(effect_settings, dict):
-            # New format: full settings dict
+        # Apply white effect if configured (RGBCCT mode only) — runs concurrently with RGB
+        if white_effect_settings and isinstance(white_effect_settings, dict) and controller._dual_ws2811_rgbcct:
+            effect_id = white_effect_settings.get("effect_id")
+            if effect_id is not None:
+                speed = white_effect_settings.get("speed", 128)
+                intensity = white_effect_settings.get("intensity", 128)
+                base_temperature = white_effect_settings.get("base_temperature", 4000)
+                controller.set_white_effect(effect_id, speed=speed, intensity=intensity,
+                                            base_temperature=base_temperature)
+
+        # Apply RGB effect only if RGB brightness is non-zero and settings are configured
+        if effect_settings and isinstance(effect_settings, dict) and controller.brightness > 0:
             controller.set_power(1)
 
-            # Set effect
             effect_id = effect_settings.get("effect_id", 0)
             palette_id = effect_settings.get("palette_id", 0)
             speed = effect_settings.get("speed", 128)
@@ -626,10 +1223,8 @@ def effect_playing(controller: DWLEDController, effect_settings: Optional[dict] 
             controller.set_effect(effect_id, speed=speed, intensity=intensity)
             controller.set_palette(palette_id)
 
-            # Set colors if provided
             color1 = effect_settings.get("color1")
             if color1:
-                # Convert hex to RGB
                 r1 = int(color1[1:3], 16)
                 g1 = int(color1[3:5], 16)
                 b1 = int(color1[5:7], 16)
@@ -650,9 +1245,7 @@ def effect_playing(controller: DWLEDController, effect_settings: Optional[dict] 
                     color3=(r3, g3, b3)
                 )
 
-            return True
-
-        # Default: do nothing (keep current LED state)
+        # Default: keep current LED state
         return True
     except Exception as e:
         logger.error(f"Error setting playing effect: {e}")

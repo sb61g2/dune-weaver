@@ -110,6 +110,11 @@ class AppState:
         self.dw_led_brightness = 35  # Brightness 0-100
         self.dw_led_speed = 50  # Effect speed 0-255
         self.dw_led_intensity = 128  # Effect intensity 0-255
+        self.dw_led_dual_ws2811_rgbcct = False  # Dual WS2811 mode for RGBCCT strips
+        self.dw_led_color_temperature = 4000  # Color temperature in Kelvin (2700-6500)
+        self.dw_led_white_level = 0  # White channel level 0-100
+        self.dw_led_white_brightness = 100  # White channel brightness multiplier 0-100
+        self.dw_led_white_mode = False  # White mode (true = white channels only, false = RGB color mode)
 
         # Idle effect settings (all parameters)
         self.dw_led_idle_effect = None  # Full effect configuration dict or None
@@ -122,6 +127,19 @@ class AppState:
         self.dw_led_idle_timeout_minutes = 30  # Idle timeout duration in minutes
         self.dw_led_control_mode = "automated"  # "manual" or "automated"
         self.dw_led_last_activity_time = None  # Last activity timestamp (runtime only, not persisted)
+
+        # Powerup restoration setting
+        self.dw_led_restore_on_startup = False  # Restore LED state on startup instead of forcing off
+
+        # White effect parameters
+        self.dw_led_white_speed = 128  # White effect speed 0-255
+        self.dw_led_white_intensity = 128  # White effect intensity 0-255
+        self.dw_led_white_base_temperature = 4000  # Base temperature for white effects (2700-6500K)
+
+        # White effect automation (similar to RGB)
+        self.dw_led_idle_white_effect = None  # White effect for idle state (dict or None)
+        self.dw_led_playing_white_effect = None  # White effect for playing state (dict or None)
+
         self.table_type = None
         self.table_type_override = None  # User override for table type detection
         self.gear_ratio_override = None  # User override for gear ratio (highest priority)
@@ -515,11 +533,22 @@ class AppState:
             "dw_led_brightness": self.dw_led_brightness,
             "dw_led_speed": self.dw_led_speed,
             "dw_led_intensity": self.dw_led_intensity,
+            "dw_led_dual_ws2811_rgbcct": self.dw_led_dual_ws2811_rgbcct,
+            "dw_led_color_temperature": self.dw_led_color_temperature,
+            "dw_led_white_level": self.dw_led_white_level,
+            "dw_led_white_brightness": self.dw_led_white_brightness,
+            "dw_led_white_mode": self.dw_led_white_mode,
             "dw_led_idle_effect": self.dw_led_idle_effect,
             "dw_led_playing_effect": self.dw_led_playing_effect,
             "dw_led_idle_timeout_enabled": self.dw_led_idle_timeout_enabled,
             "dw_led_idle_timeout_minutes": self.dw_led_idle_timeout_minutes,
             "dw_led_control_mode": self.dw_led_control_mode,
+            "dw_led_restore_on_startup": self.dw_led_restore_on_startup,
+            "dw_led_white_speed": self.dw_led_white_speed,
+            "dw_led_white_intensity": self.dw_led_white_intensity,
+            "dw_led_white_base_temperature": self.dw_led_white_base_temperature,
+            "dw_led_idle_white_effect": self.dw_led_idle_white_effect,
+            "dw_led_playing_white_effect": self.dw_led_playing_white_effect,
             "app_name": self.app_name,
             "table_id": self.table_id,
             "table_name": self.table_name,
@@ -621,6 +650,11 @@ class AppState:
         self.dw_led_brightness = data.get('dw_led_brightness', 35)
         self.dw_led_speed = data.get('dw_led_speed', 50)
         self.dw_led_intensity = data.get('dw_led_intensity', 128)
+        self.dw_led_dual_ws2811_rgbcct = data.get('dw_led_dual_ws2811_rgbcct', False)
+        self.dw_led_color_temperature = data.get('dw_led_color_temperature', 4000)
+        self.dw_led_white_level = data.get('dw_led_white_level', 0)
+        self.dw_led_white_brightness = data.get('dw_led_white_brightness', 100)
+        self.dw_led_white_mode = data.get('dw_led_white_mode', False)
 
         # Load effect settings (handle both old string format and new dict format)
         idle_effect_data = data.get('dw_led_idle_effect', None)
@@ -638,6 +672,12 @@ class AppState:
         self.dw_led_idle_timeout_enabled = data.get('dw_led_idle_timeout_enabled', False)
         self.dw_led_idle_timeout_minutes = data.get('dw_led_idle_timeout_minutes', 30)
         self.dw_led_control_mode = data.get('dw_led_control_mode', "automated")
+        self.dw_led_restore_on_startup = data.get('dw_led_restore_on_startup', False)
+        self.dw_led_white_speed = data.get('dw_led_white_speed', 128)
+        self.dw_led_white_intensity = data.get('dw_led_white_intensity', 128)
+        self.dw_led_white_base_temperature = data.get('dw_led_white_base_temperature', 4000)
+        self.dw_led_idle_white_effect = data.get('dw_led_idle_white_effect', None)
+        self.dw_led_playing_white_effect = data.get('dw_led_playing_white_effect', None)
 
         self.app_name = data.get("app_name", "Dune Weaver")
         self.table_id = data.get("table_id", None)

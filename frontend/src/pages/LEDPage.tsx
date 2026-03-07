@@ -30,6 +30,9 @@ interface LedConfig {
   wled_ip?: string
   num_leds?: number
   gpio_pin?: number
+  dual_ws2811_rgbcct?: boolean
+  color_temperature?: number
+  white_level?: number
 }
 
 interface DWLedsStatus {
@@ -44,6 +47,12 @@ interface DWLedsStatus {
   gpio_pin: number
   colors: string[]
   error?: string
+  // RGBCCT fields
+  white_brightness?: number
+  white_effect_id?: number | null
+  white_effect_running?: boolean
+  white_speed?: number
+  white_intensity?: number
 }
 
 interface EffectSettings {
@@ -54,6 +63,13 @@ interface EffectSettings {
   color1: string
   color2: string
   color3: string
+}
+
+interface WhiteEffectSettings {
+  effect_id: number
+  speed: number
+  intensity: number
+  base_temperature: number
 }
 
 export function LEDPage() {
@@ -75,6 +91,12 @@ export function LEDPage() {
   const [color2, setColor2] = useState('#000000')
   const [color3, setColor3] = useState('#0000ff')
 
+  // Per-channel on/off (RGBCCT only) — soft-mute by zeroing brightness
+  const [rgbOn, setRgbOn] = useState(true)
+  const [whiteOn, setWhiteOn] = useState(false)
+  const savedBrightnessRef = useRef<number>(35)
+  const savedWhiteBrightnessRef = useRef<number>(50)
+
   // Ref for debouncing color picker API calls
   const colorDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -88,21 +110,50 @@ export function LEDPage() {
   const [idleTimeoutMinutes, setIdleTimeoutMinutes] = useState(30)
   const [idleTimeoutInput, setIdleTimeoutInput] = useState('30')
 
+  // RGBCCT white channel state
+  const [whiteBrightness, setWhiteBrightness] = useState(0)
+  const [colorTemperature, setColorTemperature] = useState(4000)
+  const [colorTemperatureInput, setColorTemperatureInput] = useState('4000')
+  const [whiteEffects, setWhiteEffects] = useState<[number, string][]>([])
+  const [selectedWhiteEffect, setSelectedWhiteEffect] = useState('')
+  const [whiteSpeed, setWhiteSpeed] = useState(128)
+  const [whiteSpeedInput, setWhiteSpeedInput] = useState('128')
+  const [whiteIntensity, setWhiteIntensity] = useState(128)
+  const [whiteIntensityInput, setWhiteIntensityInput] = useState('128')
+  const [whiteBaseTemp, setWhiteBaseTemp] = useState(4000)
+  const [whiteBaseTempInput, setWhiteBaseTempInput] = useState('4000')
+  const [idleWhiteEffect, setIdleWhiteEffect] = useState<WhiteEffectSettings | null>(null)
+  const [playingWhiteEffect, setPlayingWhiteEffect] = useState<WhiteEffectSettings | null>(null)
+
   // Fetch LED configuration
   useEffect(() => {
     const fetchConfig = async () => {
       try {
-        const [configData, settingsData] = await Promise.all([
-          apiClient.get<{ provider?: string; wled_ip?: string; dw_led_num_leds?: number; dw_led_gpio_pin?: number }>('/get_led_config'),
+        const [data, settingsData] = await Promise.all([
+          apiClient.get<{
+            provider?: string
+            wled_ip?: string
+            dw_led_num_leds?: number
+            dw_led_gpio_pin?: number
+            dw_led_dual_ws2811_rgbcct?: boolean
+            dw_led_color_temperature?: number
+            dw_led_white_level?: number
+          }>('/get_led_config'),
           apiClient.get<{ led?: { control_mode?: string } }>('/api/settings'),
         ])
-        // Map backend response fields to our interface
         setLedConfig({
-          provider: (configData.provider as LedConfig['provider']) || 'none',
-          wled_ip: configData.wled_ip,
-          num_leds: configData.dw_led_num_leds,
-          gpio_pin: configData.dw_led_gpio_pin,
+          provider: (data.provider as LedConfig['provider']) || 'none',
+          wled_ip: data.wled_ip,
+          num_leds: data.dw_led_num_leds,
+          gpio_pin: data.dw_led_gpio_pin,
+          dual_ws2811_rgbcct: data.dw_led_dual_ws2811_rgbcct || false,
+          color_temperature: data.dw_led_color_temperature || 4000,
+          white_level: data.dw_led_white_level || 0,
         })
+        if (data.dw_led_color_temperature) {
+          setColorTemperature(data.dw_led_color_temperature)
+          setColorTemperatureInput(String(data.dw_led_color_temperature))
+        }
         if (settingsData.led?.control_mode) {
           setControlMode(settingsData.led.control_mode as 'manual' | 'automated')
         }
@@ -122,6 +173,10 @@ export function LEDPage() {
       fetchEffectsAndPalettes()
       fetchEffectSettings()
       fetchIdleTimeout()
+      if (ledConfig.dual_ws2811_rgbcct) {
+        fetchWhiteEffects()
+        fetchWhiteEffectSettings()
+      }
     }
   }, [ledConfig])
 
@@ -130,7 +185,10 @@ export function LEDPage() {
       const data = await apiClient.get<DWLedsStatus>('/api/dw_leds/status')
       setDwStatus(data)
       if (data.connected) {
-        setBrightness(data.brightness || 35)
+        const brt = data.brightness || 35
+        setBrightness(brt)
+        setRgbOn(brt > 0)
+        if (brt > 0) savedBrightnessRef.current = brt
         setSpeed(data.speed || 128)
         setSpeedInput(String(data.speed || 128))
         setIntensity(data.intensity || 128)
@@ -141,6 +199,23 @@ export function LEDPage() {
           setColor1(data.colors[0] || '#ff0000')
           setColor2(data.colors[1] || '#000000')
           setColor3(data.colors[2] || '#0000ff')
+        }
+        // RGBCCT fields
+        if (data.white_brightness !== undefined) {
+          setWhiteBrightness(data.white_brightness)
+          setWhiteOn(data.white_brightness > 0)
+          if (data.white_brightness > 0) savedWhiteBrightnessRef.current = data.white_brightness
+        }
+        if (data.white_speed !== undefined) {
+          setWhiteSpeed(data.white_speed)
+          setWhiteSpeedInput(String(data.white_speed))
+        }
+        if (data.white_intensity !== undefined) {
+          setWhiteIntensity(data.white_intensity)
+          setWhiteIntensityInput(String(data.white_intensity))
+        }
+        if (data.white_effect_id !== null && data.white_effect_id !== undefined) {
+          setSelectedWhiteEffect(String(data.white_effect_id))
         }
       }
     } catch (error) {
@@ -189,6 +264,31 @@ export function LEDPage() {
     }
   }
 
+  const fetchWhiteEffects = async () => {
+    try {
+      const data = await apiClient.get<{ effects?: [number, string][] }>('/api/dw_leds/white_effects')
+      if (data.effects) {
+        const sorted = [...data.effects].sort((a, b) => a[1].localeCompare(b[1]))
+        setWhiteEffects(sorted)
+      }
+    } catch (error) {
+      console.error('Error fetching white effects:', error)
+    }
+  }
+
+  const fetchWhiteEffectSettings = async () => {
+    try {
+      const data = await apiClient.get<{
+        idle_white_effect?: WhiteEffectSettings
+        playing_white_effect?: WhiteEffectSettings
+      }>('/api/dw_leds/get_white_effect_settings')
+      setIdleWhiteEffect(data.idle_white_effect || null)
+      setPlayingWhiteEffect(data.playing_white_effect || null)
+    } catch (error) {
+      console.error('Error fetching white effect settings:', error)
+    }
+  }
+
   const handleControlModeChange = async (mode: 'manual' | 'automated') => {
     setControlMode(mode)
     try {
@@ -222,6 +322,12 @@ export function LEDPage() {
       const data = await apiClient.post<{ connected?: boolean }>('/api/dw_leds/brightness', { value: value[0] })
       if (data.connected) {
         toast.success(`Brightness: ${value[0]}%`)
+        if (value[0] > 0) {
+          savedBrightnessRef.current = value[0]
+          setRgbOn(true)
+        } else {
+          setRgbOn(false)
+        }
       }
     } catch {
       toast.error('Failed to set brightness')
@@ -285,17 +391,14 @@ export function LEDPage() {
   }
 
   const handleColorChange = (slot: 1 | 2 | 3, value: string) => {
-    // Update UI immediately for responsive feedback
     if (slot === 1) setColor1(value)
     else if (slot === 2) setColor2(value)
     else setColor3(value)
 
-    // Clear any pending debounce timer
     if (colorDebounceRef.current) {
       clearTimeout(colorDebounceRef.current)
     }
 
-    // Debounce API call by 300ms to prevent overwhelming the backend
     colorDebounceRef.current = setTimeout(async () => {
       try {
         const hexToRgb = (hex: string) => {
@@ -368,6 +471,186 @@ export function LEDPage() {
     const paletteName = palettes.find((p) => p[0] === settings.palette_id)?.[1] || settings.palette_id
     return `${effectName} | ${paletteName} | Speed: ${settings.speed} | Intensity: ${settings.intensity}`
   }
+
+  // ── RGBCCT white channel handlers ──────────────────────────────────────────
+
+  const handleWhiteBrightnessChange = useCallback((value: number[]) => {
+    setWhiteBrightness(value[0])
+  }, [])
+
+  const handleWhiteBrightnessCommit = async (value: number[]) => {
+    try {
+      const data = await apiClient.post<{ connected?: boolean }>('/api/dw_leds/white_brightness', { value: value[0] })
+      if (data.connected) {
+        toast.success(`White brightness: ${value[0]}%`)
+        if (value[0] > 0) {
+          savedWhiteBrightnessRef.current = value[0]
+          setWhiteOn(true)
+        } else {
+          setWhiteOn(false)
+        }
+      }
+    } catch {
+      toast.error('Failed to set white brightness')
+    }
+  }
+
+  const handleRgbToggle = async () => {
+    try {
+      if (rgbOn) {
+        if (brightness > 0) savedBrightnessRef.current = brightness
+        await apiClient.post('/api/dw_leds/brightness', { value: 0 })
+        setBrightness(0)
+        setRgbOn(false)
+      } else {
+        const val = savedBrightnessRef.current || 35
+        await apiClient.post('/api/dw_leds/brightness', { value: val })
+        setBrightness(val)
+        setRgbOn(true)
+      }
+    } catch {
+      toast.error('Failed to toggle RGB channel')
+    }
+  }
+
+  const handleWhiteToggle = async () => {
+    try {
+      if (whiteOn) {
+        if (whiteBrightness > 0) savedWhiteBrightnessRef.current = whiteBrightness
+        await apiClient.post('/api/dw_leds/white_brightness', { value: 0 })
+        setWhiteBrightness(0)
+        setWhiteOn(false)
+      } else {
+        const val = savedWhiteBrightnessRef.current || 50
+        await apiClient.post('/api/dw_leds/white_brightness', { value: val })
+        setWhiteBrightness(val)
+        setWhiteOn(true)
+      }
+    } catch {
+      toast.error('Failed to toggle white channel')
+    }
+  }
+
+  const handleColorTemperatureCommit = async (kelvin: number) => {
+    try {
+      // Always send level: 100 so _ww/_cw are set at full scale; white brightness slider
+      // controls actual output independently via _white_brightness on the proxy.
+      await apiClient.post('/api/dw_leds/color_temperature', { kelvin, level: 100 })
+      toast.success(`Color temperature: ${kelvin}K`)
+    } catch {
+      toast.error('Failed to set color temperature')
+    }
+  }
+
+  const handleWhiteEffectChange = async (value: string) => {
+    setSelectedWhiteEffect(value)
+    try {
+      await apiClient.post('/api/dw_leds/white_effect', {
+        effect_id: parseInt(value),
+        speed: whiteSpeed,
+        intensity: whiteIntensity,
+        base_temperature: whiteBaseTemp,
+      })
+      toast.success('White effect changed')
+    } catch {
+      toast.error('Failed to set white effect')
+    }
+  }
+
+  const handleWhiteSpeedChange = useCallback((value: number[]) => {
+    setWhiteSpeed(value[0])
+    setWhiteSpeedInput(String(value[0]))
+  }, [])
+
+  const handleWhiteSpeedCommit = async (value: number[]) => {
+    if (!selectedWhiteEffect) return
+    try {
+      await apiClient.post('/api/dw_leds/white_effect', {
+        effect_id: parseInt(selectedWhiteEffect),
+        speed: value[0],
+        intensity: whiteIntensity,
+        base_temperature: whiteBaseTemp,
+      })
+    } catch {
+      toast.error('Failed to update white speed')
+    }
+  }
+
+  const handleWhiteIntensityChange = useCallback((value: number[]) => {
+    setWhiteIntensity(value[0])
+    setWhiteIntensityInput(String(value[0]))
+  }, [])
+
+  const handleWhiteIntensityCommit = async (value: number[]) => {
+    if (!selectedWhiteEffect) return
+    try {
+      await apiClient.post('/api/dw_leds/white_effect', {
+        effect_id: parseInt(selectedWhiteEffect),
+        speed: whiteSpeed,
+        intensity: value[0],
+        base_temperature: whiteBaseTemp,
+      })
+    } catch {
+      toast.error('Failed to update white intensity')
+    }
+  }
+
+  const handleWhiteBaseTempChange = useCallback((value: number[]) => {
+    setWhiteBaseTemp(value[0])
+    setWhiteBaseTempInput(String(value[0]))
+  }, [])
+
+  const handleWhiteBaseTempCommit = async (value: number[]) => {
+    if (!selectedWhiteEffect) return
+    try {
+      await apiClient.post('/api/dw_leds/white_effect', {
+        effect_id: parseInt(selectedWhiteEffect),
+        speed: whiteSpeed,
+        intensity: whiteIntensity,
+        base_temperature: value[0],
+      })
+    } catch {
+      toast.error('Failed to update white base temperature')
+    }
+  }
+
+  const handleStopWhiteEffect = async () => {
+    try {
+      await apiClient.post('/api/dw_leds/stop_white_effect', {})
+      setSelectedWhiteEffect('')
+      toast.success('White effect stopped')
+    } catch {
+      toast.error('Failed to stop white effect')
+    }
+  }
+
+  const saveWhiteEffectSettings = async (preset_type: 'idle' | 'playing') => {
+    try {
+      await apiClient.post('/api/dw_leds/save_white_effect_settings', { preset_type })
+      toast.success(`White ${preset_type} effect saved`)
+      await fetchWhiteEffectSettings()
+    } catch {
+      toast.error(`Failed to save white ${preset_type} effect`)
+    }
+  }
+
+  const clearWhiteEffectSettings = async (preset_type: 'idle' | 'playing') => {
+    try {
+      await apiClient.post('/api/dw_leds/clear_white_effect_settings', { preset_type })
+      toast.success(`White ${preset_type} effect cleared`)
+      await fetchWhiteEffectSettings()
+    } catch {
+      toast.error(`Failed to clear white ${preset_type} effect`)
+    }
+  }
+
+  const formatWhiteEffectSettings = (settings: WhiteEffectSettings | null) => {
+    if (!settings) return 'Not configured'
+    const effectName = whiteEffects.find((e) => e[0] === settings.effect_id)?.[1] || `Effect ${settings.effect_id}`
+    return `${effectName} | ${settings.base_temperature}K | Speed: ${settings.speed} | Intensity: ${settings.intensity}`
+  }
+
+  const isRgbcct = ledConfig?.dual_ws2811_rgbcct === true
 
   // Loading state
   if (isLoading) {
@@ -478,7 +761,9 @@ export function LEDPage() {
       {/* Page Header */}
       <div className="space-y-0.5 sm:space-y-1 pl-1">
         <h1 className="text-xl font-semibold tracking-tight">LED Control</h1>
-        <p className="text-xs text-muted-foreground">DW LEDs - GPIO controlled LED strip</p>
+        <p className="text-xs text-muted-foreground">
+          DW LEDs – GPIO controlled LED strip{isRgbcct ? ' (RGBCCT dual WS2811)' : ''}
+        </p>
       </div>
 
       <Separator />
@@ -524,12 +809,34 @@ export function LEDPage() {
                       : 'Not connected'}
                   </div>
 
-                  {/* Brightness Slider */}
+                  {/* Per-channel toggles (RGBCCT only) */}
+                  {isRgbcct && (
+                    <div className="flex items-center gap-6">
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          checked={rgbOn}
+                          onCheckedChange={handleRgbToggle}
+                          disabled={!dwStatus?.power_on}
+                        />
+                        <Label className={`text-sm ${!dwStatus?.power_on ? 'text-muted-foreground' : ''}`}>RGB</Label>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          checked={whiteOn}
+                          onCheckedChange={handleWhiteToggle}
+                          disabled={!dwStatus?.power_on}
+                        />
+                        <Label className={`text-sm ${!dwStatus?.power_on ? 'text-muted-foreground' : ''}`}>White</Label>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* RGB Brightness Slider */}
                   <div className="space-y-2">
                     <div className="flex justify-between items-center">
                       <Label>
                         <span className="material-icons-outlined text-sm mr-2 align-[-6px] text-muted-foreground">brightness_6</span>
-                        Brightness
+                        {isRgbcct ? 'RGB Brightness' : 'Brightness'}
                       </Label>
                       <span className="text-sm font-medium">{brightness}%</span>
                     </div>
@@ -541,6 +848,26 @@ export function LEDPage() {
                       step={1}
                     />
                   </div>
+
+                  {/* White Brightness Slider - RGBCCT only */}
+                  {isRgbcct && (
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center">
+                        <Label>
+                          <span className="material-icons-outlined text-sm mr-2 align-[-6px] text-muted-foreground">light_mode</span>
+                          White Brightness
+                        </Label>
+                        <span className="text-sm font-medium">{whiteBrightness}%</span>
+                      </div>
+                      <Slider
+                        value={[whiteBrightness]}
+                        onValueChange={handleWhiteBrightnessChange}
+                        onValueCommit={handleWhiteBrightnessCommit}
+                        max={100}
+                        step={1}
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
             </CardContent>
@@ -672,6 +999,215 @@ export function LEDPage() {
               </div>
             </CardContent>
           </Card>
+
+          {/* White Channel Card - RGBCCT only */}
+          {isRgbcct && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <span className="material-icons-outlined text-muted-foreground">light_mode</span>
+                  White Channel
+                </CardTitle>
+                <CardDescription>Color temperature and white channel effects for RGBCCT strips</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                {/* Color Temperature */}
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center">
+                    <Label>Color Temperature</Label>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="text"
+                        inputMode="numeric"
+                        value={colorTemperatureInput}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/[^0-9]/g, '')
+                          setColorTemperatureInput(val)
+                        }}
+                        onBlur={() => {
+                          const num = Math.min(6500, Math.max(2700, parseInt(colorTemperatureInput) || 4000))
+                          setColorTemperature(num)
+                          setColorTemperatureInput(String(num))
+                          handleColorTemperatureCommit(num)
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            const num = Math.min(6500, Math.max(2700, parseInt(colorTemperatureInput) || 4000))
+                            setColorTemperature(num)
+                            setColorTemperatureInput(String(num))
+                            handleColorTemperatureCommit(num)
+                          }
+                        }}
+                        className="w-20 h-7 text-center text-sm font-medium px-2"
+                      />
+                      <span className="text-sm text-muted-foreground">K</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs text-amber-600 font-medium whitespace-nowrap">2700K warm</span>
+                    <Slider
+                      value={[colorTemperature]}
+                      onValueChange={(v) => {
+                        setColorTemperature(v[0])
+                        setColorTemperatureInput(String(v[0]))
+                      }}
+                      onValueCommit={(v) => handleColorTemperatureCommit(v[0])}
+                      min={2700}
+                      max={6500}
+                      step={100}
+                      className="flex-1"
+                    />
+                    <span className="text-xs text-blue-400 font-medium whitespace-nowrap">6500K cool</span>
+                  </div>
+                </div>
+
+                <Separator />
+
+                {/* White Effects */}
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-base">White Effects</Label>
+                    {selectedWhiteEffect && (
+                      <Button size="sm" variant="secondary" onClick={handleStopWhiteEffect}>
+                        Stop Effect
+                      </Button>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <Select value={selectedWhiteEffect} onValueChange={handleWhiteEffectChange}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select white effect..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {whiteEffects.map(([id, name]) => (
+                          <SelectItem key={id} value={String(id)}>
+                            {name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {selectedWhiteEffect && (
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      {/* White Speed */}
+                      <div className="p-3 rounded-lg border space-y-2">
+                        <div className="flex justify-between items-center">
+                          <Label className="text-xs">Speed</Label>
+                          <Input
+                            type="text"
+                            inputMode="numeric"
+                            value={whiteSpeedInput}
+                            onChange={(e) => {
+                              const val = e.target.value.replace(/[^0-9]/g, '')
+                              setWhiteSpeedInput(val)
+                            }}
+                            onBlur={() => {
+                              const num = Math.min(255, Math.max(0, parseInt(whiteSpeedInput) || 0))
+                              setWhiteSpeed(num)
+                              setWhiteSpeedInput(String(num))
+                              handleWhiteSpeedCommit([num])
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                const num = Math.min(255, Math.max(0, parseInt(whiteSpeedInput) || 0))
+                                setWhiteSpeed(num)
+                                setWhiteSpeedInput(String(num))
+                                handleWhiteSpeedCommit([num])
+                              }
+                            }}
+                            className="w-14 h-6 text-center text-xs px-1"
+                          />
+                        </div>
+                        <Slider
+                          value={[whiteSpeed]}
+                          onValueChange={handleWhiteSpeedChange}
+                          onValueCommit={handleWhiteSpeedCommit}
+                          max={255}
+                          step={1}
+                        />
+                      </div>
+                      {/* White Intensity */}
+                      <div className="p-3 rounded-lg border space-y-2">
+                        <div className="flex justify-between items-center">
+                          <Label className="text-xs">Intensity</Label>
+                          <Input
+                            type="text"
+                            inputMode="numeric"
+                            value={whiteIntensityInput}
+                            onChange={(e) => {
+                              const val = e.target.value.replace(/[^0-9]/g, '')
+                              setWhiteIntensityInput(val)
+                            }}
+                            onBlur={() => {
+                              const num = Math.min(255, Math.max(0, parseInt(whiteIntensityInput) || 0))
+                              setWhiteIntensity(num)
+                              setWhiteIntensityInput(String(num))
+                              handleWhiteIntensityCommit([num])
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                const num = Math.min(255, Math.max(0, parseInt(whiteIntensityInput) || 0))
+                                setWhiteIntensity(num)
+                                setWhiteIntensityInput(String(num))
+                                handleWhiteIntensityCommit([num])
+                              }
+                            }}
+                            className="w-14 h-6 text-center text-xs px-1"
+                          />
+                        </div>
+                        <Slider
+                          value={[whiteIntensity]}
+                          onValueChange={handleWhiteIntensityChange}
+                          onValueCommit={handleWhiteIntensityCommit}
+                          max={255}
+                          step={1}
+                        />
+                      </div>
+                      {/* White Base Temperature */}
+                      <div className="p-3 rounded-lg border space-y-2">
+                        <div className="flex justify-between items-center">
+                          <Label className="text-xs">Base Temp (K)</Label>
+                          <Input
+                            type="text"
+                            inputMode="numeric"
+                            value={whiteBaseTempInput}
+                            onChange={(e) => {
+                              const val = e.target.value.replace(/[^0-9]/g, '')
+                              setWhiteBaseTempInput(val)
+                            }}
+                            onBlur={() => {
+                              const num = Math.min(6500, Math.max(2700, parseInt(whiteBaseTempInput) || 4000))
+                              setWhiteBaseTemp(num)
+                              setWhiteBaseTempInput(String(num))
+                              handleWhiteBaseTempCommit([num])
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                const num = Math.min(6500, Math.max(2700, parseInt(whiteBaseTempInput) || 4000))
+                                setWhiteBaseTemp(num)
+                                setWhiteBaseTempInput(String(num))
+                                handleWhiteBaseTempCommit([num])
+                              }
+                            }}
+                            className="w-16 h-6 text-center text-xs px-1"
+                          />
+                        </div>
+                        <Slider
+                          value={[whiteBaseTemp]}
+                          onValueChange={handleWhiteBaseTempChange}
+                          onValueCommit={handleWhiteBaseTempCommit}
+                          min={2700}
+                          max={6500}
+                          step={100}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </div>
 
         {/* Right Column - Colors & Quick Settings */}
@@ -711,8 +1247,7 @@ export function LEDPage() {
             </CardContent>
           </Card>
 
-          {/* Auto Turn Off - hidden in manual mode */}
-          {controlMode === 'automated' && (
+          {/* Auto Turn Off */}
           <Card className="flex-1 flex flex-col">
             <CardHeader className="pb-3">
               <CardTitle className="text-lg flex items-center gap-2">
@@ -761,12 +1296,10 @@ export function LEDPage() {
               )}
             </CardContent>
           </Card>
-          )}
         </div>
       </div>
 
-      {/* Automation Settings - Full Width - hidden in manual mode */}
-      {controlMode === 'automated' && (
+      {/* Automation Settings - Full Width */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-lg flex items-center gap-2">
@@ -777,15 +1310,14 @@ export function LEDPage() {
             Save current settings to automatically apply when table state changes
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-6">
+          {/* RGB Effect Automation */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {/* Playing Effect */}
             <div className="p-4 rounded-lg border space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="material-icons text-green-600">play_circle</span>
-                  <span className="font-medium">While Playing</span>
-                </div>
+              <div className="flex items-center gap-2">
+                <span className="material-icons text-green-600">play_circle</span>
+                <span className="font-medium">While Playing</span>
               </div>
               <div className="text-xs text-muted-foreground p-2 bg-muted/50 rounded border min-h-[40px]">
                 {formatEffectSettings(playingEffect)}
@@ -811,11 +1343,9 @@ export function LEDPage() {
 
             {/* Idle Effect */}
             <div className="p-4 rounded-lg border space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="material-icons text-blue-600">bedtime</span>
-                  <span className="font-medium">When Idle</span>
-                </div>
+              <div className="flex items-center gap-2">
+                <span className="material-icons text-blue-600">bedtime</span>
+                <span className="font-medium">When Idle</span>
               </div>
               <div className="text-xs text-muted-foreground p-2 bg-muted/50 rounded border min-h-[40px]">
                 {formatEffectSettings(idleEffect)}
@@ -839,9 +1369,78 @@ export function LEDPage() {
               </div>
             </div>
           </div>
+
+          {/* White Effect Automation - RGBCCT only */}
+          {isRgbcct && (
+            <>
+              <Separator />
+              <div>
+                <p className="text-sm font-medium text-muted-foreground mb-3 flex items-center gap-1.5">
+                  <span className="material-icons-outlined text-base">light_mode</span>
+                  White Channel Automation
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* White Playing Effect */}
+                  <div className="p-4 rounded-lg border space-y-3">
+                    <div className="flex items-center gap-2">
+                      <span className="material-icons text-green-600">play_circle</span>
+                      <span className="font-medium">White While Playing</span>
+                    </div>
+                    <div className="text-xs text-muted-foreground p-2 bg-muted/50 rounded border min-h-[40px]">
+                      {formatWhiteEffectSettings(playingWhiteEffect)}
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        onClick={() => saveWhiteEffectSettings('playing')}
+                        className="flex-1 gap-1"
+                      >
+                        <span className="material-icons text-sm">save</span>
+                        Save Current
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => clearWhiteEffectSettings('playing')}
+                      >
+                        Clear
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* White Idle Effect */}
+                  <div className="p-4 rounded-lg border space-y-3">
+                    <div className="flex items-center gap-2">
+                      <span className="material-icons text-blue-600">bedtime</span>
+                      <span className="font-medium">White When Idle</span>
+                    </div>
+                    <div className="text-xs text-muted-foreground p-2 bg-muted/50 rounded border min-h-[40px]">
+                      {formatWhiteEffectSettings(idleWhiteEffect)}
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        onClick={() => saveWhiteEffectSettings('idle')}
+                        className="flex-1 gap-1"
+                      >
+                        <span className="material-icons text-sm">save</span>
+                        Save Current
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => clearWhiteEffectSettings('idle')}
+                      >
+                        Clear
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
         </CardContent>
       </Card>
-      )}
     </div>
   )
 }

@@ -55,6 +55,13 @@ class MQTTHandler(BaseMQTTHandler):
         self.screen_power_topic = f"{self.device_id}/screen/power/set"
         self.screen_brightness_topic = f"{self.device_id}/screen/brightness/set"
 
+        # RGBCCT white channel topics
+        self.led_white_brightness_topic = f"{self.device_id}/led/white_brightness/set"
+        self.led_color_temp_topic = f"{self.device_id}/led/color_temperature/set"
+        # Unified tunable-white light entity (for HA areas / Google Home integration)
+        self.led_white_light_topic = f"{self.device_id}/led/white_light/set"
+        self._white_light_kelvin = 4000  # track last commanded color temp
+
         # LED control topics
         self.led_power_topic = f"{self.device_id}/led/power/set"
         self.led_brightness_topic = f"{self.device_id}/led/brightness/set"
@@ -404,6 +411,58 @@ class MQTTHandler(BaseMQTTHandler):
             }
             self._publish_discovery("light", "led_color", led_color_config)
 
+        # RGBCCT white channel entities (only published when RGBCCT is configured)
+        if state.led_controller:
+            controller = state.led_controller.get_controller()
+            if controller and getattr(controller, '_dual_ws2811_rgbcct', False):
+                led_white_brightness_config = {
+                    "name": f"{self.device_name} White Brightness",
+                    "unique_id": f"{self.device_id}_led_white_brightness",
+                    "command_topic": self.led_white_brightness_topic,
+                    "state_topic": f"{self.device_id}/led/white_brightness/state",
+                    "device": base_device,
+                    "icon": "mdi:brightness-5",
+                    "min": 0,
+                    "max": 100,
+                    "mode": "slider",
+                    "unit_of_measurement": "%"
+                }
+                self._publish_discovery("number", "led_white_brightness", led_white_brightness_config)
+
+                led_color_temp_config = {
+                    "name": f"{self.device_name} Color Temperature",
+                    "unique_id": f"{self.device_id}_led_color_temperature",
+                    "command_topic": self.led_color_temp_topic,
+                    "state_topic": f"{self.device_id}/led/color_temperature/state",
+                    "device": base_device,
+                    "icon": "mdi:thermometer",
+                    "min": 2700,
+                    "max": 6500,
+                    "step": 100,
+                    "mode": "slider",
+                    "unit_of_measurement": "K"
+                }
+                self._publish_discovery("number", "led_color_temperature", led_color_temp_config)
+
+                # Unified tunable-white light (ON/OFF + brightness + color_temp in mireds)
+                # Assign this entity to an HA Area and Google Home will include it
+                # in that room's lights automatically — no automation YAML needed.
+                white_light_config = {
+                    "name": f"{self.device_name} White Light",
+                    "unique_id": f"{self.device_id}_white_light",
+                    "schema": "json",
+                    "command_topic": self.led_white_light_topic,
+                    "state_topic": f"{self.device_id}/led/white_light/state",
+                    "brightness": True,
+                    "color_temp": True,
+                    "min_mireds": 154,   # 6500 K
+                    "max_mireds": 370,   # 2700 K
+                    "device": base_device,
+                    "icon": "mdi:lightbulb-cfl",
+                    "optimistic": False
+                }
+                self._publish_discovery("light", "white_light", white_light_config)
+
         # Screen Control Entities (only if screen controller is available)
         if state.screen_controller and state.screen_controller.available:
             screen_status = state.screen_controller.get_status()
@@ -584,8 +643,37 @@ class MQTTHandler(BaseMQTTHandler):
                     self.client.publish(f"{self.device_id}/led/color/state",
                                       json.dumps({"r": r, "g": g, "b": b}), retain=True)
 
+            # Publish RGBCCT white channel state
+            if "white_brightness" in status:
+                self.client.publish(f"{self.device_id}/led/white_brightness/state",
+                                    status["white_brightness"], retain=True)
+                self._publish_white_light_state()
+
         except Exception as e:
             logger.error(f"Error publishing LED state: {e}")
+
+    def _publish_white_light_state(self):
+        """Publish unified white light state (RGBCCT mode) in HA JSON light schema."""
+        if not state.led_controller or state.led_provider != "dw_leds":
+            return
+
+        try:
+            status = state.led_controller.check_status()
+            if not status.get("connected", False):
+                return
+            is_powered = status.get("power_on", False)
+            white_pct = status.get("white_brightness", 0)
+            ha_brightness = int(white_pct / 100 * 255)
+            mireds = int(1_000_000 / self._white_light_kelvin)
+            payload = {
+                "state": "ON" if (is_powered and white_pct > 0) else "OFF",
+                "brightness": ha_brightness,
+                "color_temp": mireds,
+            }
+            self.client.publish(f"{self.device_id}/led/white_light/state",
+                                json.dumps(payload), retain=True)
+        except Exception as e:
+            logger.error(f"Error publishing white light state: {e}")
 
     def _publish_screen_state(self):
         """Helper to publish screen (LCD backlight) state to MQTT."""
@@ -643,6 +731,9 @@ class MQTTHandler(BaseMQTTHandler):
                 (self.led_speed_topic, 0),
                 (self.led_intensity_topic, 0),
                 (self.led_color_topic, 0),
+                (self.led_white_brightness_topic, 0),
+                (self.led_color_temp_topic, 0),
+                (self.led_white_light_topic, 0),
                 (self.screen_power_topic, 0),
                 (self.screen_brightness_topic, 0),
             ])
@@ -834,6 +925,51 @@ class MQTTHandler(BaseMQTTHandler):
                                               json.dumps({"r": r, "g": g, "b": b}), retain=True)
                 except json.JSONDecodeError:
                     logger.error(f"Invalid JSON for color command: {msg.payload}")
+            elif msg.topic == self.led_white_brightness_topic:
+                # Handle white brightness command (RGBCCT DW LEDs only)
+                white_brightness = int(msg.payload.decode())
+                if 0 <= white_brightness <= 100 and state.led_controller and state.led_provider == "dw_leds":
+                    controller = state.led_controller.get_controller()
+                    if controller and hasattr(controller, 'set_white_brightness_level'):
+                        controller.set_white_brightness_level(white_brightness)
+                        self.client.publish(f"{self.device_id}/led/white_brightness/state",
+                                            white_brightness, retain=True)
+            elif msg.topic == self.led_color_temp_topic:
+                # Handle color temperature command (RGBCCT DW LEDs only)
+                kelvin = int(msg.payload.decode())
+                if 2700 <= kelvin <= 6500 and state.led_controller and state.led_provider == "dw_leds":
+                    controller = state.led_controller.get_controller()
+                    if controller and hasattr(controller, 'set_color_temperature'):
+                        controller.set_color_temperature(kelvin, level=100)
+                        self._white_light_kelvin = kelvin
+                        self.client.publish(f"{self.device_id}/led/color_temperature/state",
+                                            kelvin, retain=True)
+            elif msg.topic == self.led_white_light_topic:
+                # Unified tunable-white light command from HA (JSON schema)
+                # Payload: {"state": "ON"/"OFF", "brightness": 0-255, "color_temp": mireds}
+                try:
+                    cmd = json.loads(msg.payload.decode())
+                    if state.led_controller and state.led_provider == "dw_leds":
+                        controller = state.led_controller.get_controller()
+                        new_state = cmd.get("state", "").upper()
+
+                        if new_state == "OFF":
+                            state.led_controller.set_power(0)
+                        else:
+                            state.led_controller.set_power(1)
+
+                            if "brightness" in cmd and controller and hasattr(controller, 'set_white_brightness_level'):
+                                white_pct = int(cmd["brightness"] / 255 * 100)
+                                controller.set_white_brightness_level(white_pct)
+
+                            if "color_temp" in cmd and controller and hasattr(controller, 'set_color_temperature'):
+                                kelvin = max(2700, min(6500, int(1_000_000 / cmd["color_temp"])))
+                                controller.set_color_temperature(kelvin, level=100)
+                                self._white_light_kelvin = kelvin
+
+                        self._publish_white_light_state()
+                except (json.JSONDecodeError, ZeroDivisionError) as e:
+                    logger.error(f"Invalid white light command: {msg.payload} — {e}")
             elif msg.topic == self.screen_power_topic:
                 # Handle screen power command
                 payload = msg.payload.decode()

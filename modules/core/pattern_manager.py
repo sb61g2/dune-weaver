@@ -363,11 +363,12 @@ async def start_idle_led_timeout(check_still_sands: bool = True):
 
     # Normal flow: show idle effect
     # For WLED: always trigger (uses hardcoded preset 1)
-    # For DW_LED: only trigger if effect is configured
-    if state.led_provider != "wled" and not state.dw_led_idle_effect:
+    # For DW_LED: only trigger if effect is configured (RGB or white)
+    if state.led_provider != "wled" and not state.dw_led_idle_effect and not state.dw_led_idle_white_effect:
         logger.debug("No idle effect configured, leaving LEDs unchanged")
         return
-    await state.led_controller.effect_idle_async(state.dw_led_idle_effect)
+    await state.led_controller.effect_idle_async(state.dw_led_idle_effect,
+                                                  white_effect_settings=state.dw_led_idle_white_effect)
 
     # Start timeout if enabled
     if not state.dw_led_idle_timeout_enabled:
@@ -1244,10 +1245,11 @@ async def _execute_pattern_internal(file_path):
     completed_weight = 0.0  # Track rho-weighted progress
     smoothed_rate = None  # For exponential smoothing of time-per-unit-weight rate
     # For WLED: always trigger (uses hardcoded preset 2)
-    # For DW_LED: only trigger if effect is configured
-    if state.led_controller and state.led_automation_enabled and (state.led_provider == "wled" or state.dw_led_playing_effect):
-        logger.info(f"Setting LED to playing effect: {state.dw_led_playing_effect}")
-        await state.led_controller.effect_playing_async(state.dw_led_playing_effect)
+    # For DW_LED: only trigger if effect is configured (RGB or white)
+    if state.led_controller and state.led_automation_enabled and (state.led_provider == "wled" or state.dw_led_playing_effect or state.dw_led_playing_white_effect):
+        logger.info(f"Setting LED to playing effect: RGB={state.dw_led_playing_effect}, White={state.dw_led_playing_white_effect}")
+        await state.led_controller.effect_playing_async(state.dw_led_playing_effect,
+                                                         white_effect_settings=state.dw_led_playing_white_effect)
         # Cancel idle timeout when playing starts
         idle_timeout_manager.cancel_timeout()
 
@@ -1366,10 +1368,11 @@ async def _execute_pattern_internal(file_path):
                         await asyncio.sleep(0.5)
                     # Apply playing effect if configured
                     # For WLED: always trigger (uses hardcoded preset 2)
-                    # For DW_LED: only trigger if effect is configured
-                    should_trigger_led = state.led_automation_enabled and (state.led_provider == "wled" or state.dw_led_playing_effect)
+                    # For DW_LED: only trigger if effect is configured (RGB or white)
+                    should_trigger_led = state.led_automation_enabled and (state.led_provider == "wled" or state.dw_led_playing_effect or state.dw_led_playing_white_effect)
                     if should_trigger_led:
-                        await state.led_controller.effect_playing_async(state.dw_led_playing_effect)
+                        await state.led_controller.effect_playing_async(state.dw_led_playing_effect,
+                                                                         white_effect_settings=state.dw_led_playing_white_effect)
                     # Cancel idle timeout when resuming from pause
                     idle_timeout_manager.cancel_timeout()
 
@@ -1622,10 +1625,11 @@ async def run_theta_rho_files(file_paths, pause_time=0, clear_pattern=None, run_
                                 await asyncio.sleep(0.5)
                             # Apply playing effect if configured
                             # For WLED: always trigger (uses hardcoded preset 2)
-                            # For DW_LED: only trigger if effect is configured
-                            should_trigger_led = state.led_automation_enabled and (state.led_provider == "wled" or state.dw_led_playing_effect)
+                            # For DW_LED: only trigger if effect is configured (RGB or white)
+                            should_trigger_led = state.led_automation_enabled and (state.led_provider == "wled" or state.dw_led_playing_effect or state.dw_led_playing_white_effect)
                             if should_trigger_led:
-                                await state.led_controller.effect_playing_async(state.dw_led_playing_effect)
+                                await state.led_controller.effect_playing_async(state.dw_led_playing_effect,
+                                                                                 white_effect_settings=state.dw_led_playing_white_effect)
                             idle_timeout_manager.cancel_timeout()
 
                 # Handle pause between patterns

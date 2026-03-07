@@ -86,6 +86,8 @@ interface LedConfig {
   num_leds?: number
   gpio_pin?: number
   pixel_order?: string
+  dual_ws2811_rgbcct?: boolean
+  restore_on_startup?: boolean
 }
 
 interface MqttConfig {
@@ -430,6 +432,8 @@ export function SettingsPage() {
         num_leds: data.dw_led_num_leds,
         gpio_pin: data.dw_led_gpio_pin,
         pixel_order: data.dw_led_pixel_order,
+        dual_ws2811_rgbcct: data.dw_led_dual_ws2811_rgbcct || false,
+        restore_on_startup: data.dw_led_restore_on_startup || false,
       })
       setNumLedsInput(String(data.dw_led_num_leds || 60))
     } catch (error) {
@@ -584,6 +588,8 @@ export function SettingsPage() {
         num_leds: ledConfig.num_leds,
         gpio_pin: ledConfig.gpio_pin,
         pixel_order: ledConfig.pixel_order,
+        dual_ws2811_rgbcct: ledConfig.dual_ws2811_rgbcct,
+        restore_on_startup: ledConfig.restore_on_startup,
       })
       toast.success('LED configuration saved')
     } catch (error) {
@@ -1616,6 +1622,38 @@ export function SettingsPage() {
                       </SelectGroup>
                     </SelectContent>
                   </Select>
+                </div>
+
+                {/* RGBCCT Dual WS2811 Mode */}
+                <div className="flex items-center justify-between py-1">
+                  <div className="space-y-0.5">
+                    <Label>RGBCCT Dual WS2811 Mode</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Enable for RGBCCT strips using two WS2811 chips (RGB + Warm/Cool White)
+                    </p>
+                  </div>
+                  <Switch
+                    checked={ledConfig.dual_ws2811_rgbcct || false}
+                    onCheckedChange={(checked) =>
+                      setLedConfig({ ...ledConfig, dual_ws2811_rgbcct: checked })
+                    }
+                  />
+                </div>
+
+                {/* Restore on Startup */}
+                <div className="flex items-center justify-between py-1">
+                  <div className="space-y-0.5">
+                    <Label>Restore LED State on Startup</Label>
+                    <p className="text-xs text-muted-foreground">
+                      When enabled, restores previous brightness on startup instead of starting off
+                    </p>
+                  </div>
+                  <Switch
+                    checked={ledConfig.restore_on_startup || false}
+                    onCheckedChange={(checked) =>
+                      setLedConfig({ ...ledConfig, restore_on_startup: checked })
+                    }
+                  />
                 </div>
               </div>
             )}

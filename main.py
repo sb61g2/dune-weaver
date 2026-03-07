@@ -174,22 +174,89 @@ async def lifespan(app: FastAPI):
                 pixel_order=state.dw_led_pixel_order,
                 brightness=state.dw_led_brightness / 100.0,
                 speed=state.dw_led_speed,
-                intensity=state.dw_led_intensity
+                intensity=state.dw_led_intensity,
+                dual_ws2811_rgbcct=state.dw_led_dual_ws2811_rgbcct
             )
-            logger.info(f"LED controller initialized: DW LEDs ({state.dw_led_num_leds} LEDs on GPIO{state.dw_led_gpio_pin}, pixel order: {state.dw_led_pixel_order})")
+            mode_str = " (dual WS2811 RGBCCT)" if state.dw_led_dual_ws2811_rgbcct else ""
+            logger.info(f"LED controller initialized: DW LEDs ({state.dw_led_num_leds} LEDs on GPIO{state.dw_led_gpio_pin}, pixel order: {state.dw_led_pixel_order}{mode_str})")
 
-            # Initialize hardware and start idle effect (matches behavior of /set_led_config)
+            # Check if hardware connected
             status = state.led_controller.check_status()
-            if status.get("connected", False):
-                if state.led_automation_enabled:
+            if not status.get("connected", False):
+                error_msg = status.get("error", "Unknown error")
+                logger.warning(f"DW LED hardware initialization failed: {error_msg}")
+            elif state.dw_led_dual_ws2811_rgbcct and hasattr(state.led_controller, '_controller'):
+                # RGBCCT dual WS2811 mode: apply saved white channel settings
+                controller = state.led_controller._controller
+                if not controller._initialized:
+                    controller._initialize_hardware()
+
+                logger.info(f"RGBCCT mode detected, controller has _pixels: {hasattr(controller, '_pixels')}")
+                if hasattr(controller, '_pixels') and hasattr(controller._pixels, 'set_cct'):
+                    kelvin = state.dw_led_color_temperature
+                    if kelvin <= 2700:
+                        ww_ratio = 1.0
+                    elif kelvin >= 6500:
+                        ww_ratio = 0.0
+                    else:
+                        ww_ratio = 1.0 - (kelvin - 2700) / (6500 - 2700)
+                    ww = int(255 * ww_ratio)
+                    cw = int(255 * (1.0 - ww_ratio))
+                    controller._pixels._ww = ww
+                    controller._pixels._cw = cw
+
+                    if state.dw_led_restore_on_startup:
+                        rgb_brightness = state.dw_led_brightness / 100.0
+                        white_brightness = state.dw_led_white_brightness / 100.0
+                        controller._pixels._white_brightness = white_brightness
+                        controller._pixels._rgb_brightness = rgb_brightness
+                        controller.brightness = rgb_brightness
+                        controller._powered_on = (rgb_brightness > 0 or white_brightness > 0)
+                        controller._pixels._update_all_white_channels()
+                        controller._pixels.show()
+                        logger.info(f"Restored RGBCCT state: RGB={int(rgb_brightness*100)}%, White={int(white_brightness*100)}%, temp={kelvin}K")
+                    else:
+                        controller._pixels._white_brightness = 0.0
+                        controller._pixels._rgb_brightness = 0.0
+                        controller.brightness = 0.0
+                        controller._powered_on = False
+                        for i in range(len(controller._pixels)):
+                            controller._pixels._physical[2 * i] = (0, 0, 0)
+                        controller._pixels._update_all_white_channels()
+                        controller._pixels.show()
+                        state.dw_led_white_brightness = 0
+                        state.dw_led_brightness = 0
+                        state.save()
+                        logger.info(f"Initialized RGBCCT: All LEDs OFF, color temp={kelvin}K (WW={ww}, CW={cw})")
+                        # Apply idle effect and start timeout
+                        state.led_controller.effect_idle(state.dw_led_idle_effect,
+                                                         white_effect_settings=state.dw_led_idle_white_effect)
+                        _start_idle_led_timeout()
+                else:
+                    logger.warning(f"Could not initialize white channels: _pixels missing or not a proxy")
+                    state.led_controller.effect_idle(state.dw_led_idle_effect)
+                    _start_idle_led_timeout()
+            else:
+                # Standard DW LEDs initialization
+                if state.dw_led_restore_on_startup and hasattr(state.led_controller, '_controller'):
+                    controller = state.led_controller._controller
+                    if not controller._initialized:
+                        controller._initialize_hardware()
+                    if hasattr(controller, '_pixels') and controller._pixels:
+                        rgb_brightness = state.dw_led_brightness / 100.0
+                        controller.brightness = rgb_brightness
+                        controller._powered_on = (rgb_brightness > 0)
+                        if rgb_brightness > 0 and (controller._effect_thread is None or not controller._effect_thread.is_alive()):
+                            controller._stop_thread.clear()
+                            controller._effect_thread = threading.Thread(target=controller._effect_loop, daemon=True)
+                            controller._effect_thread.start()
+                        logger.info(f"Restored standard DW LEDs: RGB={int(rgb_brightness*100)}%")
+                elif state.led_automation_enabled:
                     state.led_controller.effect_idle(state.dw_led_idle_effect)
                     _start_idle_led_timeout()
                     logger.info("DW LEDs hardware initialized and idle effect started")
                 else:
                     logger.info("DW LEDs hardware initialized (manual mode, no auto-effect)")
-            else:
-                error_msg = status.get("error", "Unknown error")
-                logger.warning(f"DW LED hardware initialization failed: {error_msg}")
         else:
             state.led_controller = None
             logger.info("LED controller not configured")
@@ -442,6 +509,8 @@ class LEDConfigRequest(BaseModel):
     gpio_pin: Optional[int] = None
     pixel_order: Optional[str] = None
     brightness: Optional[int] = None
+    dual_ws2811_rgbcct: Optional[bool] = None
+    restore_on_startup: Optional[bool] = None
 
 class DeletePlaylistRequest(BaseModel):
     playlist_name: str
@@ -503,6 +572,8 @@ class DwLedSettingsUpdate(BaseModel):
     brightness: Optional[int] = None
     speed: Optional[int] = None
     intensity: Optional[int] = None
+    dual_ws2811_rgbcct: Optional[bool] = None
+    restore_on_startup: Optional[bool] = None
     idle_effect: Optional[dict] = None
     playing_effect: Optional[dict] = None
     idle_timeout_enabled: Optional[bool] = None
@@ -781,6 +852,8 @@ async def get_all_settings():
                 "brightness": state.dw_led_brightness,
                 "speed": state.dw_led_speed,
                 "intensity": state.dw_led_intensity,
+                "dual_ws2811_rgbcct": state.dw_led_dual_ws2811_rgbcct,
+                "restore_on_startup": state.dw_led_restore_on_startup,
                 "idle_effect": state.dw_led_idle_effect,
                 "playing_effect": state.dw_led_playing_effect,
                 "idle_timeout_enabled": state.dw_led_idle_timeout_enabled,
@@ -1003,6 +1076,10 @@ async def update_settings(settings_update: SettingsUpdate):
                 state.dw_led_idle_effect = dw.idle_effect
             if dw.playing_effect is not None:
                 state.dw_led_playing_effect = dw.playing_effect
+            if dw.dual_ws2811_rgbcct is not None:
+                state.dw_led_dual_ws2811_rgbcct = dw.dual_ws2811_rgbcct
+            if dw.restore_on_startup is not None:
+                state.dw_led_restore_on_startup = dw.restore_on_startup
             if dw.idle_timeout_enabled is not None:
                 state.dw_led_idle_timeout_enabled = dw.idle_timeout_enabled
             if dw.idle_timeout_minutes is not None:
@@ -2671,6 +2748,10 @@ async def set_led_config(request: LEDConfigRequest):
         state.dw_led_gpio_pin = request.gpio_pin or 18
         state.dw_led_pixel_order = request.pixel_order or "RGB"
         state.dw_led_brightness = request.brightness or 35
+        if request.dual_ws2811_rgbcct is not None:
+            state.dw_led_dual_ws2811_rgbcct = request.dual_ws2811_rgbcct
+        if request.restore_on_startup is not None:
+            state.dw_led_restore_on_startup = request.restore_on_startup
         state.wled_ip = None
 
         # Create new LED controller with updated settings
@@ -2681,11 +2762,13 @@ async def set_led_config(request: LEDConfigRequest):
             pixel_order=state.dw_led_pixel_order,
             brightness=state.dw_led_brightness / 100.0,
             speed=state.dw_led_speed,
-            intensity=state.dw_led_intensity
+            intensity=state.dw_led_intensity,
+            dual_ws2811_rgbcct=state.dw_led_dual_ws2811_rgbcct
         )
 
         restart_msg = " (restarted)" if hardware_changed else ""
-        logger.info(f"DW LEDs configured{restart_msg}: {state.dw_led_num_leds} LEDs on GPIO{state.dw_led_gpio_pin}, pixel order: {state.dw_led_pixel_order}")
+        mode_str = " (dual WS2811 RGBCCT)" if state.dw_led_dual_ws2811_rgbcct else ""
+        logger.info(f"DW LEDs configured{restart_msg}: {state.dw_led_num_leds} LEDs on GPIO{state.dw_led_gpio_pin}, pixel order: {state.dw_led_pixel_order}{mode_str}")
 
         # Check if initialization succeeded by checking status
         status = state.led_controller.check_status()
@@ -2756,7 +2839,9 @@ async def get_led_config():
         "dw_led_pixel_order": state.dw_led_pixel_order,
         "dw_led_brightness": state.dw_led_brightness,
         "dw_led_idle_effect": state.dw_led_idle_effect,
-        "dw_led_playing_effect": state.dw_led_playing_effect
+        "dw_led_playing_effect": state.dw_led_playing_effect,
+        "dw_led_dual_ws2811_rgbcct": state.dw_led_dual_ws2811_rgbcct,
+        "dw_led_restore_on_startup": state.dw_led_restore_on_startup
     }
 
 @app.post("/skip_pattern")
@@ -3569,7 +3654,7 @@ async def dw_leds_power(request: dict):
 
 @app.post("/api/dw_leds/brightness")
 async def dw_leds_brightness(request: dict):
-    """Set DW LED brightness (0-100)"""
+    """Set DW LED RGB brightness (0-100)"""
     if not state.led_controller or state.led_provider != "dw_leds":
         raise HTTPException(status_code=400, detail="DW LEDs not configured")
 
@@ -3579,7 +3664,7 @@ async def dw_leds_brightness(request: dict):
 
     try:
         controller = state.led_controller.get_controller()
-        result = controller.set_brightness(value)
+        result = controller.set_rgb_brightness(value)
         # Update state if successful
         if result.get("connected"):
             state.dw_led_brightness = value
@@ -3885,6 +3970,225 @@ async def dw_leds_get_idle_timeout():
         "minutes": state.dw_led_idle_timeout_minutes,
         "remaining_minutes": remaining_minutes
     }
+
+# ── RGBCCT white channel endpoints ────────────────────────────────
+
+@app.post("/api/dw_leds/white_brightness")
+async def dw_leds_white_brightness(request: dict):
+    """Set DW LED white channel brightness (0-100) - RGBCCT mode only"""
+    if not state.led_controller or state.led_provider != "dw_leds":
+        raise HTTPException(status_code=400, detail="DW LEDs not configured")
+
+    value = request.get("value", 0)
+    if not 0 <= value <= 100:
+        raise HTTPException(status_code=400, detail="White brightness must be between 0 and 100")
+
+    try:
+        controller = state.led_controller.get_controller()
+        result = controller.set_white_brightness_level(value)
+        if result.get("connected"):
+            state.dw_led_white_brightness = value
+            state.save()
+        return result
+    except Exception as e:
+        logger.error(f"Failed to set DW LED white brightness: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/dw_leds/white_effects")
+async def dw_leds_white_effects():
+    """Get list of available white effects (RGBCCT mode only)"""
+    if not state.led_controller or state.led_provider != "dw_leds":
+        raise HTTPException(status_code=400, detail="DW LEDs not configured")
+
+    try:
+        controller = state.led_controller.get_controller()
+        effects = controller.get_white_effects()
+        return {"effects": effects}
+    except Exception as e:
+        logger.error(f"Failed to get white effects: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/dw_leds/white_effect")
+async def dw_leds_white_effect(request: dict):
+    """Set active white effect (RGBCCT mode only)"""
+    if not state.led_controller or state.led_provider != "dw_leds":
+        raise HTTPException(status_code=400, detail="DW LEDs not configured")
+
+    effect_id = request.get("effect_id")
+    if effect_id is None or not isinstance(effect_id, int):
+        raise HTTPException(status_code=400, detail="effect_id is required and must be an integer")
+
+    if not 0 <= effect_id <= 5:
+        raise HTTPException(status_code=400, detail="effect_id must be between 0 and 5")
+
+    speed = request.get("speed")
+    intensity = request.get("intensity")
+    base_temperature = request.get("base_temperature")
+
+    if speed is not None and not 0 <= speed <= 255:
+        raise HTTPException(status_code=400, detail="speed must be between 0 and 255")
+    if intensity is not None and not 0 <= intensity <= 255:
+        raise HTTPException(status_code=400, detail="intensity must be between 0 and 255")
+    if base_temperature is not None and not 2700 <= base_temperature <= 6500:
+        raise HTTPException(status_code=400, detail="base_temperature must be between 2700 and 6500")
+
+    try:
+        controller = state.led_controller.get_controller()
+        result = controller.set_white_effect(effect_id, speed, intensity, base_temperature)
+
+        if result.get("connected"):
+            if speed is not None:
+                state.dw_led_white_speed = speed
+            if intensity is not None:
+                state.dw_led_white_intensity = intensity
+            if base_temperature is not None:
+                state.dw_led_white_base_temperature = base_temperature
+            state.save()
+
+        if state.dw_led_idle_timeout_enabled:
+            state.dw_led_last_activity_time = time.time()
+
+        return result
+    except Exception as e:
+        logger.error(f"Failed to set white effect: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/dw_leds/stop_white_effect")
+async def dw_leds_stop_white_effect():
+    """Stop white effect and return to static white (RGBCCT mode only)"""
+    if not state.led_controller or state.led_provider != "dw_leds":
+        raise HTTPException(status_code=400, detail="DW LEDs not configured")
+
+    try:
+        controller = state.led_controller.get_controller()
+        result = controller.stop_white_effect()
+        return result
+    except Exception as e:
+        logger.error(f"Failed to stop white effect: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/dw_leds/save_white_effect_settings")
+async def dw_leds_save_white_effect_settings(request: dict):
+    """Save current white effect settings as automation preset (idle or playing)"""
+    if not state.led_controller or state.led_provider != "dw_leds":
+        raise HTTPException(status_code=400, detail="DW LEDs not configured")
+
+    preset_type = request.get("preset_type")
+    if preset_type not in ["idle", "playing"]:
+        raise HTTPException(status_code=400, detail="preset_type must be 'idle' or 'playing'")
+
+    try:
+        controller = state.led_controller.get_controller()
+        status = controller.check_status()
+
+        white_effect_config = {
+            "effect_id": status.get("white_effect_id"),
+            "speed": status.get("white_speed", 128),
+            "intensity": status.get("white_intensity", 128),
+            "base_temperature": state.dw_led_white_base_temperature
+        }
+
+        if preset_type == "idle":
+            state.dw_led_idle_white_effect = white_effect_config
+            logger.info(f"Saved white effect as idle preset: {white_effect_config}")
+        else:
+            state.dw_led_playing_white_effect = white_effect_config
+            logger.info(f"Saved white effect as playing preset: {white_effect_config}")
+
+        state.save()
+
+        return {
+            "success": True,
+            "message": f"White effect saved as {preset_type} preset",
+            "config": white_effect_config
+        }
+    except Exception as e:
+        logger.error(f"Failed to save white effect settings: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/dw_leds/clear_white_effect_settings")
+async def dw_leds_clear_white_effect_settings(request: dict):
+    """Clear white effect automation preset"""
+    preset_type = request.get("preset_type")
+    if preset_type not in ["idle", "playing"]:
+        raise HTTPException(status_code=400, detail="preset_type must be 'idle' or 'playing'")
+
+    try:
+        if preset_type == "idle":
+            state.dw_led_idle_white_effect = None
+        else:
+            state.dw_led_playing_white_effect = None
+
+        state.save()
+
+        return {
+            "success": True,
+            "message": f"{preset_type.capitalize()} white effect preset cleared"
+        }
+    except Exception as e:
+        logger.error(f"Failed to clear white effect settings: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/dw_leds/get_white_effect_settings")
+async def dw_leds_get_white_effect_settings():
+    """Get saved white effect presets"""
+    return {
+        "idle_white_effect": state.dw_led_idle_white_effect,
+        "playing_white_effect": state.dw_led_playing_white_effect
+    }
+
+@app.post("/api/dw_leds/color_temperature")
+async def dw_leds_color_temperature(request: dict):
+    """Set white color temperature (dual WS2811 RGBCCT mode only)"""
+    if not state.led_controller or state.led_provider != "dw_leds":
+        raise HTTPException(status_code=400, detail="DW LEDs not configured")
+
+    kelvin = request.get("kelvin", 4000)
+    level = request.get("level", 100)
+
+    if not 2700 <= kelvin <= 6500:
+        raise HTTPException(status_code=400, detail="Color temperature must be between 2700K and 6500K")
+    if not 0 <= level <= 100:
+        raise HTTPException(status_code=400, detail="White level must be between 0 and 100")
+
+    try:
+        controller = state.led_controller.get_controller()
+        result = controller.set_color_temperature(kelvin, level)
+        state.dw_led_color_temperature = kelvin
+        state.dw_led_white_level = level
+        state.save()
+        return result
+    except Exception as e:
+        logger.error(f"Failed to set color temperature: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/dw_leds/set_white_mode")
+async def dw_leds_set_white_mode(request: dict):
+    """Set white mode (RGBCCT dual WS2811 mode only)"""
+    if not state.led_controller or state.led_provider != "dw_leds":
+        raise HTTPException(status_code=400, detail="DW LEDs not configured")
+
+    white_mode = request.get("white_mode", False)
+    kelvin = request.get("kelvin", 4000)
+    level = request.get("level", 50)
+
+    if not 2700 <= kelvin <= 6500:
+        raise HTTPException(status_code=400, detail="Color temperature must be between 2700K and 6500K")
+    if not 0 <= level <= 100:
+        raise HTTPException(status_code=400, detail="White level must be between 0 and 100")
+
+    try:
+        controller = state.led_controller.get_controller()
+        result = controller.set_white_mode(white_mode, kelvin, level)
+        state.dw_led_white_mode = white_mode
+        if white_mode:
+            state.dw_led_color_temperature = kelvin
+            state.dw_led_white_level = level
+        state.save()
+        return result
+    except Exception as e:
+        logger.error(f"Failed to set white mode: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # ── Screen (LCD backlight) control endpoints ──────────────────────
 

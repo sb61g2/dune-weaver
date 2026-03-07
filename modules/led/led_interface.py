@@ -31,7 +31,8 @@ class LEDInterface:
 
     def __init__(self, provider: LEDProviderType = "none", ip_address: Optional[str] = None,
                  num_leds: Optional[int] = None, gpio_pin: Optional[int] = None, pixel_order: Optional[str] = None,
-                 brightness: Optional[float] = None, speed: Optional[int] = None, intensity: Optional[int] = None):
+                 brightness: Optional[float] = None, speed: Optional[int] = None, intensity: Optional[int] = None,
+                 dual_ws2811_rgbcct: bool = False):
         self.provider = provider
         self._controller = None
 
@@ -47,7 +48,8 @@ class LEDInterface:
             brightness = brightness if brightness is not None else 0.35
             speed = speed if speed is not None else 128
             intensity = intensity if intensity is not None else 128
-            self._controller = DWLEDController(num_leds, gpio_pin, brightness, pixel_order=pixel_order, speed=speed, intensity=intensity)
+            self._controller = DWLEDController(num_leds, gpio_pin, brightness, pixel_order=pixel_order, speed=speed, intensity=intensity,
+                                               dual_ws2811_rgbcct=dual_ws2811_rgbcct)
 
     @property
     def is_configured(self) -> bool:
@@ -56,7 +58,8 @@ class LEDInterface:
 
     def update_config(self, provider: LEDProviderType, ip_address: Optional[str] = None,
                      num_leds: Optional[int] = None, gpio_pin: Optional[int] = None, pixel_order: Optional[str] = None,
-                     brightness: Optional[float] = None, speed: Optional[int] = None, intensity: Optional[int] = None):
+                     brightness: Optional[float] = None, speed: Optional[int] = None, intensity: Optional[int] = None,
+                     dual_ws2811_rgbcct: bool = False):
         """Update LED provider configuration"""
         self.provider = provider
 
@@ -78,7 +81,8 @@ class LEDInterface:
             brightness = brightness if brightness is not None else 0.35
             speed = speed if speed is not None else 128
             intensity = intensity if intensity is not None else 128
-            self._controller = DWLEDController(num_leds, gpio_pin, brightness, pixel_order=pixel_order, speed=speed, intensity=intensity)
+            self._controller = DWLEDController(num_leds, gpio_pin, brightness, pixel_order=pixel_order, speed=speed, intensity=intensity,
+                                               dual_ws2811_rgbcct=dual_ws2811_rgbcct)
         else:
             self._controller = None
 
@@ -93,7 +97,7 @@ class LEDInterface:
             return dw_led_loading(self._controller)
         return False
 
-    def effect_idle(self, effect_name: Optional[str] = None) -> bool:
+    def effect_idle(self, effect_settings=None, white_effect_settings=None) -> bool:
         """Show idle effect"""
         if not self.is_configured:
             return False
@@ -101,7 +105,7 @@ class LEDInterface:
         if self.provider == "wled":
             return wled_idle(self._controller)
         elif self.provider == "dw_leds":
-            return dw_led_idle(self._controller, effect_name)
+            return dw_led_idle(self._controller, effect_settings, white_effect_settings)
         return False
 
     def effect_connected(self) -> bool:
@@ -115,7 +119,7 @@ class LEDInterface:
             return dw_led_connected(self._controller)
         return False
 
-    def effect_playing(self, effect_name: Optional[str] = None) -> bool:
+    def effect_playing(self, effect_settings=None, white_effect_settings=None) -> bool:
         """Show playing effect"""
         if not self.is_configured:
             return False
@@ -123,7 +127,7 @@ class LEDInterface:
         if self.provider == "wled":
             return wled_playing(self._controller)
         elif self.provider == "dw_leds":
-            return dw_led_playing(self._controller, effect_name)
+            return dw_led_playing(self._controller, effect_settings, white_effect_settings)
         return False
 
     def set_power(self, state: int) -> dict:
@@ -156,17 +160,17 @@ class LEDInterface:
         """Show loading effect (non-blocking)"""
         return await asyncio.to_thread(self.effect_loading)
 
-    async def effect_idle_async(self, effect_name: Optional[str] = None) -> bool:
+    async def effect_idle_async(self, effect_settings=None, white_effect_settings=None) -> bool:
         """Show idle effect (non-blocking)"""
-        return await asyncio.to_thread(self.effect_idle, effect_name)
+        return await asyncio.to_thread(self.effect_idle, effect_settings, white_effect_settings)
 
     async def effect_connected_async(self) -> bool:
         """Show connected effect (non-blocking)"""
         return await asyncio.to_thread(self.effect_connected)
 
-    async def effect_playing_async(self, effect_name: Optional[str] = None) -> bool:
+    async def effect_playing_async(self, effect_settings=None, white_effect_settings=None) -> bool:
         """Show playing effect (non-blocking)"""
-        return await asyncio.to_thread(self.effect_playing, effect_name)
+        return await asyncio.to_thread(self.effect_playing, effect_settings, white_effect_settings)
 
     async def set_power_async(self, state: int) -> dict:
         """Set power state (non-blocking)"""
