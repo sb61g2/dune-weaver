@@ -259,7 +259,7 @@ export function Layout() {
     if (wasHomingRef.current && !newIsHoming) {
       if (!sensorHomingFailed) {
         setHomingJustCompleted(true)
-        setHomingCountdown(5)
+        setHomingCountdown(0)
         setHomingDismissed(false)
       }
     }
