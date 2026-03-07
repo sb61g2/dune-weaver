@@ -70,6 +70,8 @@ interface WhiteEffectSettings {
   speed: number
   intensity: number
   base_temperature: number
+  white_brightness?: number
+  rgb_brightness?: number
 }
 
 export function LEDPage() {
@@ -647,7 +649,11 @@ export function LEDPage() {
   const formatWhiteEffectSettings = (settings: WhiteEffectSettings | null) => {
     if (!settings) return 'Not configured'
     const effectName = whiteEffects.find((e) => e[0] === settings.effect_id)?.[1] || `Effect ${settings.effect_id}`
-    return `${effectName} | ${settings.base_temperature}K | Speed: ${settings.speed} | Intensity: ${settings.intensity}`
+    const brightnessInfo = [
+      settings.white_brightness !== undefined ? `White: ${settings.white_brightness}%` : null,
+      settings.rgb_brightness !== undefined ? `RGB: ${settings.rgb_brightness}%` : null,
+    ].filter(Boolean).join(' | ')
+    return `${effectName} | ${settings.base_temperature}K | Speed: ${settings.speed} | Intensity: ${settings.intensity}${brightnessInfo ? ' | ' + brightnessInfo : ''}`
   }
 
   const isRgbcct = ledConfig?.dual_ws2811_rgbcct === true

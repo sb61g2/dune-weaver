@@ -4085,7 +4085,9 @@ async def dw_leds_save_white_effect_settings(request: dict):
             "effect_id": status.get("white_effect_id"),
             "speed": status.get("white_speed", 128),
             "intensity": status.get("white_intensity", 128),
-            "base_temperature": state.dw_led_white_base_temperature
+            "base_temperature": state.dw_led_white_base_temperature,
+            "white_brightness": status.get("white_brightness", 100),
+            "rgb_brightness": int(status.get("brightness", 1.0) * 100),
         }
 
         if preset_type == "idle":

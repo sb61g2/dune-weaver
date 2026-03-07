@@ -1120,6 +1120,10 @@ def effect_idle(controller: DWLEDController, effect_settings: Optional[dict] = N
                 speed = white_effect_settings.get("speed", 128)
                 intensity = white_effect_settings.get("intensity", 128)
                 base_temperature = white_effect_settings.get("base_temperature", 4000)
+                if "white_brightness" in white_effect_settings:
+                    controller.set_white_brightness_level(white_effect_settings["white_brightness"])
+                if "rgb_brightness" in white_effect_settings:
+                    controller.set_brightness(white_effect_settings["rgb_brightness"])
                 controller.set_white_effect(effect_id, speed=speed, intensity=intensity,
                                             base_temperature=base_temperature)
 
@@ -1208,6 +1212,10 @@ def effect_playing(controller: DWLEDController, effect_settings: Optional[dict] 
                 speed = white_effect_settings.get("speed", 128)
                 intensity = white_effect_settings.get("intensity", 128)
                 base_temperature = white_effect_settings.get("base_temperature", 4000)
+                if "white_brightness" in white_effect_settings:
+                    controller.set_white_brightness_level(white_effect_settings["white_brightness"])
+                if "rgb_brightness" in white_effect_settings:
+                    controller.set_brightness(white_effect_settings["rgb_brightness"])
                 controller.set_white_effect(effect_id, speed=speed, intensity=intensity,
                                             base_temperature=base_temperature)
 
