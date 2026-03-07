@@ -855,21 +855,6 @@ class DWLEDController:
             "message": f"Color temperature set to {kelvin}K at {level}% brightness"
         }
 
-    def set_white_mode(self, white_mode: bool, kelvin: int = 4000, level: int = 50) -> Dict:
-        """
-        Legacy function for backward compatibility - just sets color temperature
-
-        Args:
-            white_mode: Ignored (kept for API compatibility)
-            kelvin: Color temperature in Kelvin (2700-6500)
-            level: White brightness level 0-100
-
-        Returns:
-            Dict with status
-        """
-        # Simply delegate to set_color_temperature
-        return self.set_color_temperature(kelvin, level)
-
     def get_effects(self) -> List[Tuple[int, str]]:
         """Get list of all available effects"""
         return get_all_effects()

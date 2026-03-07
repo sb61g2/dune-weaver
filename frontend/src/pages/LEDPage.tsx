@@ -32,7 +32,6 @@ interface LedConfig {
   gpio_pin?: number
   dual_ws2811_rgbcct?: boolean
   color_temperature?: number
-  white_level?: number
 }
 
 interface DWLedsStatus {
@@ -139,7 +138,6 @@ export function LEDPage() {
             dw_led_gpio_pin?: number
             dw_led_dual_ws2811_rgbcct?: boolean
             dw_led_color_temperature?: number
-            dw_led_white_level?: number
           }>('/get_led_config'),
           apiClient.get<{ led?: { control_mode?: string } }>('/api/settings'),
         ])
@@ -150,7 +148,6 @@ export function LEDPage() {
           gpio_pin: data.dw_led_gpio_pin,
           dual_ws2811_rgbcct: data.dw_led_dual_ws2811_rgbcct || false,
           color_temperature: data.dw_led_color_temperature || 4000,
-          white_level: data.dw_led_white_level || 0,
         })
         if (data.dw_led_color_temperature) {
           setColorTemperature(data.dw_led_color_temperature)
