@@ -28,8 +28,13 @@ NC='\033[0m' # No Color
 # Default options
 FIX_WIFI=true  # Applied by default for stability
 SETUP_HOTSPOT=true  # Autohotspot for first-time WiFi setup
-INSTALL_DIR="$HOME/dune-weaver"
 REPO_URL="https://github.com/tuanchris/dune-weaver"
+
+# Detect the real (non-root) user when running under sudo
+# $SUDO_USER is set by sudo; fall back to $USER if not running under sudo
+REAL_USER="${SUDO_USER:-$USER}"
+REAL_HOME=$(eval echo "~$REAL_USER")
+INSTALL_DIR="$REAL_HOME/dune-weaver"
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -209,13 +214,6 @@ apply_wifi_fix() {
     NEEDS_REBOOT=true
 }
 
-# Update system packages
-update_system() {
-    print_step "Updating system packages..."
-    sudo apt update
-    sudo DEBIAN_FRONTEND=noninteractive apt full-upgrade -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold"
-    print_success "System updated"
-}
 
 # Verify we're in the dune-weaver directory
 ensure_repo() {
@@ -244,7 +242,30 @@ ensure_repo() {
     print_success "Cloned to $INSTALL_DIR"
 }
 
-# Deploy native (venv + systemd + nginx)
+# Configure nginx to serve the app (called early so partial failures don't leave default page)
+configure_nginx() {
+    print_step "Configuring nginx..."
+
+    # Ensure nginx (www-data) can traverse to static files
+    # chmod o+x grants traversal only, not directory listing
+    local dir="$INSTALL_DIR"
+    while [[ "$dir" != "/" ]]; do
+        sudo chmod o+x "$dir"
+        dir=$(dirname "$dir")
+    done
+
+    sudo cp "$INSTALL_DIR/nginx/dune-weaver.conf" /etc/nginx/sites-available/dune-weaver.conf
+    sudo sed -i "s|INSTALL_DIR_PLACEHOLDER|$INSTALL_DIR|g" /etc/nginx/sites-available/dune-weaver.conf
+    sudo ln -sf /etc/nginx/sites-available/dune-weaver.conf /etc/nginx/sites-enabled/dune-weaver.conf
+    sudo rm -f /etc/nginx/sites-enabled/default
+    sudo nginx -t
+    sudo systemctl restart nginx
+    sudo systemctl enable nginx
+
+    print_success "nginx configured"
+}
+
+# Deploy native (venv + systemd)
 deploy_native() {
     print_step "Setting up Python virtual environment..."
 
@@ -259,28 +280,9 @@ deploy_native() {
     pip install --upgrade pip
     pip install -r requirements.txt
 
-    # Ensure nginx (www-data) can traverse to static files
-    # chmod o+x grants traversal only, not directory listing
-    local dir="$INSTALL_DIR"
-    while [[ "$dir" != "/" ]]; do
-        sudo chmod o+x "$dir"
-        dir=$(dirname "$dir")
-    done
-
-    # Configure nginx
-    print_step "Configuring nginx..."
-    sudo cp "$INSTALL_DIR/nginx/dune-weaver.conf" /etc/nginx/sites-available/dune-weaver.conf
-    sudo sed -i "s|INSTALL_DIR_PLACEHOLDER|$INSTALL_DIR|g" /etc/nginx/sites-available/dune-weaver.conf
-    sudo ln -sf /etc/nginx/sites-available/dune-weaver.conf /etc/nginx/sites-enabled/dune-weaver.conf
-    sudo rm -f /etc/nginx/sites-enabled/default
-    sudo nginx -t
-    sudo systemctl restart nginx
-    sudo systemctl enable nginx
-
     # Create systemd service
     print_step "Creating systemd service..."
     sudo cp "$INSTALL_DIR/dune-weaver.service" /etc/systemd/system/dune-weaver.service
-    sudo sed -i "s|USER_PLACEHOLDER|$USER|g" /etc/systemd/system/dune-weaver.service
     sudo sed -i "s|INSTALL_DIR_PLACEHOLDER|$INSTALL_DIR|g" /etc/systemd/system/dune-weaver.service
 
     # Enable and start service
@@ -291,11 +293,11 @@ deploy_native() {
     # Create sudoers entry for passwordless systemctl commands
     print_step "Configuring sudo permissions..."
     sudo tee /etc/sudoers.d/dune-weaver > /dev/null << EOF
-$USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart dune-weaver
-$USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop dune-weaver
-$USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl start dune-weaver
-$USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl poweroff
-$USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart nginx
+$REAL_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart dune-weaver
+$REAL_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop dune-weaver
+$REAL_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl start dune-weaver
+$REAL_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl poweroff
+$REAL_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart nginx
 EOF
     sudo chmod 0440 /etc/sudoers.d/dune-weaver
 
@@ -341,7 +343,7 @@ configure_uart() {
     echo ""
     echo -e "  ${YELLOW}Note: USB is not reliable on Pi 3B+. Use UART for Pi 3B+.${NC}"
     echo ""
-    read -p "Enter choice [1/2] (default: 1): " -n 1 -r uart_choice
+    read -p "Enter choice [1/2] (default: 1): " -n 1 -r uart_choice < /dev/tty
     echo ""
 
     if [[ "$uart_choice" == "2" ]]; then
@@ -354,7 +356,7 @@ configure_uart() {
         echo -e "    Login shell over serial?     →  ${GREEN}No${NC}"
         echo -e "    Serial port hardware?        →  ${GREEN}Yes${NC}"
         echo ""
-        read -p "Press Enter to continue..." -r
+        read -p "Press Enter to continue..." -r < /dev/tty
         echo ""
 
         # Disable serial console, enable serial hardware
@@ -397,7 +399,7 @@ configure_uart() {
 
         if [[ "$has_uart" == "true" ]]; then
             echo -e "${YELLOW}UART overlays found in $CONFIG_FILE from a previous setup.${NC}"
-            read -p "Remove them? (y/N): " -n 1 -r remove_uart
+            read -p "Remove them? (y/N): " -n 1 -r remove_uart < /dev/tty
             echo ""
             if [[ "$remove_uart" =~ ^[Yy]$ ]]; then
                 sudo sed -i '/^dtoverlay=pi3-miniuart-bt$/d' "$CONFIG_FILE"
@@ -485,7 +487,7 @@ print_final_instructions() {
 
     if [[ "$NEEDS_REBOOT" == "true" ]]; then
         print_warning "A reboot is required to apply configuration changes"
-        read -p "Reboot now? (y/N) " -n 1 -r
+        read -p "Reboot now? (y/N) " -n 1 -r < /dev/tty
         echo
         if [[ $REPLY =~ ^[Yy]$ ]]; then
             sudo reboot
@@ -514,7 +516,6 @@ main() {
     check_raspberry_pi
     install_system_deps
     ensure_repo
-    update_system
     disable_wlan_powersave
 
     if [[ "$FIX_WIFI" == "true" ]]; then
@@ -525,6 +526,7 @@ main() {
         setup_autohotspot
     fi
 
+    configure_nginx
     install_lgpio
     deploy_native
     install_cli
