@@ -194,6 +194,17 @@ class MQTTHandler(BaseMQTTHandler):
         }
         self._publish_discovery("button", "skip", skip_config)
 
+        # Home Button
+        home_config = {
+            "name": "Home machine",
+            "unique_id": f"{self.device_id}_home",
+            "command_topic": f"{self.device_id}/command/home",
+            "device": base_device,
+            "icon": "mdi:home",
+            "entity_category": "config"
+        }
+        self._publish_discovery("button", "home", home_config)
+
         # Speed Control
         speed_config = {
             "name": f"{self.device_name} Speed",
@@ -721,6 +732,7 @@ class MQTTHandler(BaseMQTTHandler):
                 (f"{self.device_id}/command/pause", 0),
                 (f"{self.device_id}/command/play", 0),
                 (f"{self.device_id}/command/skip", 0),
+                (f"{self.device_id}/command/home", 0),
                 (f"{self.device_id}/playlist/mode/set", 0),
                 (f"{self.device_id}/playlist/pause_time/set", 0),
                 (f"{self.device_id}/playlist/clear_pattern/set", 0),
@@ -828,6 +840,14 @@ class MQTTHandler(BaseMQTTHandler):
                 # Handle skip command - only if a playlist is running
                 if self.state.current_playlist:
                     callback = self.callback_registry['skip']
+                    if asyncio.iscoroutinefunction(callback):
+                        asyncio.run_coroutine_threadsafe(callback(), self.main_loop)
+                    else:
+                        callback()
+            elif msg.topic == f"{self.device_id}/command/home":
+                # Handle home command - only if connected and not already homing
+                if (self.state.conn and self.state.conn.is_connected()) and not self.state.is_homing:
+                    callback = self.callback_registry['home']
                     if asyncio.iscoroutinefunction(callback):
                         asyncio.run_coroutine_threadsafe(callback(), self.main_loop)
                     else:
