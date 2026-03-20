@@ -331,7 +331,8 @@ def connect_device(homing=True):
         state.led_controller.effect_connected()
         # Set the configured idle effect after connection
         logger.info(f"Setting LED to idle effect: {state.dw_led_idle_effect}")
-        state.led_controller.effect_idle(state.dw_led_idle_effect)
+        state.led_controller.effect_idle(state.dw_led_idle_effect,
+                                         white_effect_settings=state.dw_led_idle_white_effect)
         _start_idle_led_timeout()
 
 def check_and_unlock_alarm():

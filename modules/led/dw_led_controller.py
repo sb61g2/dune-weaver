@@ -1112,48 +1112,59 @@ def effect_idle(controller: DWLEDController, effect_settings: Optional[dict] = N
                 controller.set_white_effect(effect_id, speed=speed, intensity=intensity,
                                             base_temperature=base_temperature)
 
-        # Apply RGB effect only if RGB brightness is non-zero
+        # Resolve the RGB effect settings (handle None values from saved state).
+        # effect_id and palette_id must be valid ints; speed/intensity may be None
+        # (set_effect treats None as "keep current value").
+        if effect_settings and isinstance(effect_settings, dict):
+            effect_id = effect_settings.get("effect_id") or 0
+            palette_id = effect_settings.get("palette_id") or 0
+            speed = effect_settings.get("speed")      # None → keep current speed
+            intensity = effect_settings.get("intensity")  # None → keep current intensity
+            color1 = effect_settings.get("color1")
+            color2 = effect_settings.get("color2", "#000000")
+            color3 = effect_settings.get("color3", "#0000ff")
+        else:
+            # Default: Rainbow effect with speed 60 for smoother animation
+            effect_id = 8
+            palette_id = 0
+            speed = 60
+            intensity = controller._intensity
+            color1 = None
+
+        # If brightness is zero, still update the queued effect state so the correct
+        # effect starts as soon as brightness is increased, instead of leaving whatever
+        # effect was last set (e.g. the Blink from the connection flash).
         if controller.brightness <= 0:
+            with controller._lock:
+                controller._current_effect_id = effect_id
+                controller._current_palette_id = palette_id
             return True
 
         controller.set_power(1)
+        controller.set_effect(effect_id, speed=speed, intensity=intensity)
+        controller.set_palette(palette_id)
 
-        if effect_settings and isinstance(effect_settings, dict):
-            # Configured idle effect: apply full settings
-            effect_id = effect_settings.get("effect_id", 0)
-            palette_id = effect_settings.get("palette_id", 0)
-            speed = effect_settings.get("speed", 128)
-            intensity = effect_settings.get("intensity", 128)
+        # Set colors if provided
+        if color1:
+            r1 = int(color1[1:3], 16)
+            g1 = int(color1[3:5], 16)
+            b1 = int(color1[5:7], 16)
 
-            controller.set_effect(effect_id, speed=speed, intensity=intensity)
-            controller.set_palette(palette_id)
+            r2 = int(color2[1:3], 16)
+            g2 = int(color2[3:5], 16)
+            b2 = int(color2[5:7], 16)
 
-            # Set colors if provided
-            color1 = effect_settings.get("color1")
-            if color1:
-                # Convert hex to RGB
-                r1 = int(color1[1:3], 16)
-                g1 = int(color1[3:5], 16)
-                b1 = int(color1[5:7], 16)
+            r3 = int(color3[1:3], 16)
+            g3 = int(color3[3:5], 16)
+            b3 = int(color3[5:7], 16)
 
-                color2 = effect_settings.get("color2", "#000000")
-                r2 = int(color2[1:3], 16)
-                g2 = int(color2[3:5], 16)
-                b2 = int(color2[5:7], 16)
-
-                color3 = effect_settings.get("color3", "#0000ff")
-                r3 = int(color3[1:3], 16)
-                g3 = int(color3[3:5], 16)
-                b3 = int(color3[5:7], 16)
-
-                controller.set_colors(
-                    color1=(r1, g1, b1),
-                    color2=(r2, g2, b2),
-                    color3=(r3, g3, b3)
-                )
-        else:
-            # Default: Rainbow effect with speed 60 for smoother animation
-            controller.set_effect(8, speed=60, intensity=controller._intensity)
+            controller.set_colors(
+                color1=(r1, g1, b1),
+                color2=(r2, g2, b2),
+                color3=(r3, g3, b3)
+            )
+        elif effect_settings is None:
+            # Default effect: apply stored colors
             controller.set_colors(
                 color1=controller._color1,
                 color2=controller._color2,
