@@ -1,0 +1,136 @@
+# Dune Weaver Dashboard Card for Home Assistant
+#
+# HOW TO ADD THIS CARD:
+#   1. Open your HA dashboard → Edit → Add Card → Manual
+#   2. Paste the YAML below (everything after this header block)
+#   3. If you customized your device ID in Dune Weaver settings, replace
+#      every occurrence of "dune_weaver" in topic names with your device_id.
+#
+# ENTITY IDs (from MQTT Auto-Discovery):
+#   These are the auto-generated HA entity IDs. If any don't match, find the
+#   correct ones at HA Settings → Devices & Services → MQTT → your device.
+#
+#   switch.dune_weaver_shuffle            — Shuffle toggle
+#   switch.dune_weaver_led_power          — Color lights on/off
+#   number.dune_weaver_led_brightness     — Color LED brightness (0–100)
+#   select.dune_weaver_led_effect         — Color light effect selector
+#   light.dune_weaver_white_light         — White lights + brightness (RGBCCT only)
+#   number.dune_weaver_led_white_brightness — White brightness (RGBCCT only)
+#
+# CLEAR PATTERN:
+#   Replace "clear_from_out.thr" with the exact filename from your Dune Weaver
+#   pattern picker.
+#
+# SHUFFLE PLAYLIST 1 / MASTER ON/OFF:
+#   Add the scripts from dune_weaver_scripts.yaml to your config/scripts.yaml,
+#   then update "Playlist 1" to match your actual playlist name.
+# ---------------------------------------------------------------------------
+
+type: vertical-stack
+cards:
+
+  # ── Header ────────────────────────────────────────────────────────────────
+  - type: markdown
+    content: |
+      ## Dune Weaver
+
+  # ── Master Light Control ───────────────────────────────────────────────────
+  - type: horizontal-stack
+    cards:
+      - type: button
+        name: All Lights On
+        icon: mdi:lightbulb-on
+        show_state: false
+        tap_action:
+          action: perform-action
+          perform_action: script.dune_weaver_all_lights_on
+
+      - type: button
+        name: All Lights Off
+        icon: mdi:lightbulb-off
+        show_state: false
+        tap_action:
+          action: perform-action
+          perform_action: script.dune_weaver_all_lights_off
+
+  # ── Playback Controls ─────────────────────────────────────────────────────
+  - type: horizontal-stack
+    cards:
+      - type: button
+        name: Play
+        icon: mdi:play-circle-outline
+        show_state: false
+        tap_action:
+          action: perform-action
+          perform_action: mqtt.publish
+          data:
+            topic: dune_weaver/command/play
+            payload: ""
+
+      - type: button
+        name: Pause
+        icon: mdi:pause-circle-outline
+        show_state: false
+        tap_action:
+          action: perform-action
+          perform_action: mqtt.publish
+          data:
+            topic: dune_weaver/command/pause
+            payload: ""
+
+      - type: button
+        name: Stop
+        icon: mdi:stop-circle-outline
+        show_state: false
+        tap_action:
+          action: perform-action
+          perform_action: mqtt.publish
+          data:
+            topic: dune_weaver/command/stop
+            payload: ""
+
+  # ── Pattern Actions ───────────────────────────────────────────────────────
+  - type: horizontal-stack
+    cards:
+      - type: button
+        name: Clear Pattern
+        icon: mdi:circle-outline
+        show_state: false
+        tap_action:
+          action: perform-action
+          perform_action: mqtt.publish
+          data:
+            topic: dune_weaver/pattern/set
+            # Replace with exact filename from your Dune Weaver pattern list
+            payload: "clear_from_out.thr"
+
+      - type: button
+        name: Shuffle Playlist 1
+        icon: mdi:shuffle-variant
+        show_state: false
+        tap_action:
+          action: perform-action
+          perform_action: script.dune_weaver_shuffle_playlist_1
+
+  # ── Lights ────────────────────────────────────────────────────────────────
+  - type: entities
+    title: Lights
+    entities:
+      # White Lights — toggle + brightness slider built into the light entity row.
+      # Remove these two rows if you don't have RGBCCT LEDs.
+      - entity: light.dune_weaver_white_light
+        name: White Lights
+
+      - entity: number.dune_weaver_led_white_brightness
+        name: White Brightness
+
+      # Color Lights
+      - entity: switch.dune_weaver_led_power
+        name: Color Lights
+
+      - entity: number.dune_weaver_led_brightness
+        name: Color Brightness
+
+      # Color Effect Selector — pick from 45 animated LED effects.
+      - entity: select.dune_weaver_led_effect
+        name: Color Effect

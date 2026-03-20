@@ -1,0 +1,64 @@
+# Dune Weaver — HA Scripts
+#
+# HOW TO ADD:
+#   Option A (scripts.yaml file):
+#     Paste the content below into your config/scripts.yaml, then reload scripts
+#     via HA Developer Tools → YAML → Reload Scripts.
+#
+#   Option B (UI):
+#     HA Settings → Automations & Scenes → Scripts → + Add Script → Edit in YAML,
+#     paste just the sequence block and set the alias.
+#
+#   Option C (packages):
+#     If you use HA packages, create config/packages/dune_weaver.yaml and paste
+#     this entire file wrapped in:
+#       script:
+#         <contents below>
+#
+# IMPORTANT: Replace "Playlist 1" with the exact name of your playlist as it
+# appears in the Dune Weaver playlist manager. The name is case-sensitive.
+# ---------------------------------------------------------------------------
+
+dune_weaver_all_lights_on:
+  alias: "Dune Weaver — All Lights On"
+  description: "Turn on both white and color LEDs."
+  mode: single
+  sequence:
+    - action: mqtt.publish
+      data:
+        topic: dune_weaver/led/white_light/set
+        payload: '{"state": "ON"}'
+    - action: mqtt.publish
+      data:
+        topic: dune_weaver/led/power/set
+        payload: "ON"
+
+dune_weaver_all_lights_off:
+  alias: "Dune Weaver — All Lights Off"
+  description: "Turn off both white and color LEDs."
+  mode: single
+  sequence:
+    - action: mqtt.publish
+      data:
+        topic: dune_weaver/led/white_light/set
+        payload: '{"state": "OFF"}'
+    - action: mqtt.publish
+      data:
+        topic: dune_weaver/led/power/set
+        payload: "OFF"
+
+dune_weaver_shuffle_playlist_1:
+  alias: "Dune Weaver — Shuffle Playlist 1"
+  description: "Enable shuffle and start Playlist 1 on the sand table."
+  mode: single
+  sequence:
+    # 1. Turn shuffle on
+    - action: mqtt.publish
+      data:
+        topic: dune_weaver/playlist/shuffle/set
+        payload: "ON"
+    # 2. Start the playlist (replace "Playlist 1" with your playlist name)
+    - action: mqtt.publish
+      data:
+        topic: dune_weaver/playlist/set
+        payload: "Playlist 1"
