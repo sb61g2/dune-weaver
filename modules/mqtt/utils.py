@@ -24,6 +24,7 @@ def create_mqtt_callbacks() -> Dict[str, Callable]:
         state.skip_requested = True
 
     async def run_clear():
+        state.stop_requested = False
         mode = state.clear_pattern if state.clear_pattern and state.clear_pattern != 'none' else 'clear_from_out'
         file_path = get_clear_pattern_file(mode)
         if file_path:
