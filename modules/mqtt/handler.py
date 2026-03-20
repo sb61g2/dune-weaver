@@ -205,6 +205,17 @@ class MQTTHandler(BaseMQTTHandler):
         }
         self._publish_discovery("button", "home", home_config)
 
+        # Clear Button
+        clear_config = {
+            "name": "Clear sand",
+            "unique_id": f"{self.device_id}_clear",
+            "command_topic": f"{self.device_id}/command/clear",
+            "device": base_device,
+            "icon": "mdi:circle-outline",
+            "entity_category": "config"
+        }
+        self._publish_discovery("button", "clear", clear_config)
+
         # Speed Control
         speed_config = {
             "name": f"{self.device_name} Speed",
@@ -733,6 +744,7 @@ class MQTTHandler(BaseMQTTHandler):
                 (f"{self.device_id}/command/play", 0),
                 (f"{self.device_id}/command/skip", 0),
                 (f"{self.device_id}/command/home", 0),
+                (f"{self.device_id}/command/clear", 0),
                 (f"{self.device_id}/playlist/mode/set", 0),
                 (f"{self.device_id}/playlist/pause_time/set", 0),
                 (f"{self.device_id}/playlist/clear_pattern/set", 0),
@@ -848,6 +860,14 @@ class MQTTHandler(BaseMQTTHandler):
                 # Handle home command - only if connected and not already homing
                 if (self.state.conn and self.state.conn.is_connected()) and not self.state.is_homing:
                     callback = self.callback_registry['home']
+                    if asyncio.iscoroutinefunction(callback):
+                        asyncio.run_coroutine_threadsafe(callback(), self.main_loop)
+                    else:
+                        callback()
+            elif msg.topic == f"{self.device_id}/command/clear":
+                # Handle clear command - only if connected and not already homing
+                if (self.state.conn and self.state.conn.is_connected()) and not self.state.is_homing:
+                    callback = self.callback_registry['clear']
                     if asyncio.iscoroutinefunction(callback):
                         asyncio.run_coroutine_threadsafe(callback(), self.main_loop)
                     else:

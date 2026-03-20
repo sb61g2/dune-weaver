@@ -4,7 +4,7 @@ from typing import Dict, Callable
 from modules.core.pattern_manager import (
     run_theta_rho_file, stop_actions, pause_execution,
     resume_execution, THETA_RHO_DIR,
-    run_theta_rho_files, list_theta_rho_files
+    run_theta_rho_files, list_theta_rho_files, get_clear_pattern_file
 )
 from modules.core.playlist_manager import get_playlist, run_playlist
 from modules.connection.connection_manager import home
@@ -12,7 +12,7 @@ from modules.core.state import state
 
 def create_mqtt_callbacks() -> Dict[str, Callable]:
     """Create and return the MQTT callback registry.
-    
+
     Note: run_theta_rho_file and run_playlist are async functions,
     while pause_execution, resume_execution, and stop_actions are sync functions.
     The MQTT handler will check and handle both async and sync appropriately.
@@ -23,6 +23,12 @@ def create_mqtt_callbacks() -> Dict[str, Callable]:
     def skip_pattern():
         state.skip_requested = True
 
+    async def run_clear():
+        mode = state.clear_pattern if state.clear_pattern and state.clear_pattern != 'none' else 'clear_from_out'
+        file_path = get_clear_pattern_file(mode)
+        if file_path:
+            await run_theta_rho_file(file_path)
+
     return {
         'run_pattern': run_theta_rho_file,  # async function
         'run_playlist': run_playlist,  # async function
@@ -31,6 +37,7 @@ def create_mqtt_callbacks() -> Dict[str, Callable]:
         'resume': resume_execution,  # sync function
         'skip': skip_pattern,  # sync function
         'home': home,
+        'clear': run_clear,  # async function
         'set_speed': set_speed
     }
 
