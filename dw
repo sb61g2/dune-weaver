@@ -50,6 +50,23 @@ find_install_dir() {
 
 INSTALL_DIR=$(find_install_dir)
 
+# Run a command as the real (non-root) user when invoked via sudo.
+# For dw commands that are not typically run with sudo, this is a no-op.
+run_as_user() {
+    if [[ $EUID -eq 0 && -n "$SUDO_USER" ]]; then
+        sudo -u "$SUDO_USER" -- "$@"
+    else
+        "$@"
+    fi
+}
+
+# Ensure repo files are owned by the real user (not root).
+fix_repo_ownership() {
+    if [[ -n "$INSTALL_DIR" && $EUID -eq 0 && -n "$SUDO_USER" ]]; then
+        chown -R "$SUDO_USER:$SUDO_USER" "$INSTALL_DIR"
+    fi
+}
+
 # Check if installed
 check_installed() {
     if [[ -z "$INSTALL_DIR" ]]; then
@@ -112,8 +129,12 @@ cmd_update() {
     # Check if we should skip the pull phase (called after re-exec)
     if [[ "$1" != "--continue" ]]; then
         echo "Pulling latest code..."
-        git config --global --add safe.directory "$INSTALL_DIR" 2>/dev/null || true
-        git pull
+        run_as_user git config --global --add safe.directory "$INSTALL_DIR" 2>/dev/null || true
+        local branch
+        branch=$(git rev-parse --abbrev-ref HEAD)
+        run_as_user git fetch origin "$branch"
+        run_as_user git reset --hard "origin/$branch"
+        fix_repo_ownership
 
         # Update dw CLI
         echo "Updating dw command..."
@@ -142,9 +163,9 @@ cmd_update() {
             libgpiod-dev gpiod \
             nginx
 
-        # Create Python venv
+        # Create Python venv as real user
         echo "Creating Python virtual environment..."
-        python3 -m venv .venv
+        run_as_user python3 -m venv .venv
 
         # Stop and remove Docker containers/service if running
         if command -v docker &> /dev/null; then
@@ -154,6 +175,13 @@ cmd_update() {
             sudo docker ps -q --filter "name=dune-weaver" | xargs -r sudo docker stop 2>/dev/null || true
             sudo docker ps -aq --filter "name=dune-weaver" | xargs -r sudo docker rm 2>/dev/null || true
         fi
+    fi
+
+    # Fix venv ownership if created by sudo (legacy installs)
+    if [[ -d ".venv" ]] && [[ "$(stat -c '%U' .venv 2>/dev/null)" == "root" ]]; then
+        echo "Fixing .venv ownership..."
+        local real_user="${SUDO_USER:-$USER}"
+        sudo chown -R "$real_user:$real_user" .venv
     fi
 
     # Configure nginx BEFORE pip install so partial failures don't leave the default page
@@ -172,7 +200,7 @@ cmd_update() {
 
     echo "Updating Python dependencies..."
     source .venv/bin/activate
-    pip install -r requirements.txt
+    run_as_user .venv/bin/pip install -r requirements.txt
 
     # Update systemd service
     echo "Updating systemd service..."
@@ -336,25 +364,26 @@ cmd_checkout() {
 
     # Repo may be cloned with --single-branch; fetch the target branch explicitly
     echo -e "${BLUE}Fetching branch ${branch}...${NC}"
-    if ! git fetch origin "$branch" 2>/dev/null; then
+    if ! run_as_user git fetch origin "$branch" 2>/dev/null; then
         echo -e "${RED}Branch '${branch}' not found on remote${NC}"
         exit 1
     fi
 
     # Checkout: create local tracking branch if it doesn't exist
     if git show-ref --verify --quiet "refs/heads/$branch"; then
-        git checkout "$branch"
-        git pull
+        run_as_user git checkout "$branch"
+        run_as_user git reset --hard "origin/$branch"
     else
-        git checkout -b "$branch" "origin/$branch"
+        run_as_user git checkout -b "$branch" "origin/$branch"
     fi
+    fix_repo_ownership
 
     echo -e "Switched to branch: ${GREEN}${branch}${NC}"
 
     # Update Python dependencies
     echo "Updating Python dependencies..."
     source .venv/bin/activate
-    pip install -r requirements.txt
+    run_as_user .venv/bin/pip install -r requirements.txt
 
     # Update dw CLI from the new branch
     sudo cp "$INSTALL_DIR/dw" /usr/local/bin/dw
