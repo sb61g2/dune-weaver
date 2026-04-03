@@ -1,8 +1,8 @@
 # CLAUDE.md — Fork Maintenance Guide
 
 This is a **personal fork** of [tuanchris/dune-weaver](https://github.com/tuanchris/dune-weaver).
-Upstream is tracked as the `upstream` remote. The last merged upstream release is **v4.1.2**
-(merge commit `fe2703b`).
+Upstream is tracked as the `upstream` remote. The last merged upstream release is **v4.1.3**
+(merge commit `2af1263`).
 
 ## How to Merge a New Upstream Release
 
@@ -29,6 +29,21 @@ These files are heavily modified in this fork and almost always need manual atte
 | `frontend/src/pages/LEDPage.tsx` | RGBCCT white-channel UI |
 | `frontend/src/pages/SettingsPage.tsx` | RGBCCT / restore-on-startup toggles |
 | `dw` / `setup-pi.sh` | sudo-user detection, Docker-to-native migration |
+| `static/dist/` | **Always rebuild after merging** — upstream ships pre-built dist; our fork's RGBCCT UI must be rebuilt to produce a combined bundle. See *Frontend Dist Rebuild* note below. |
+
+### Frontend Dist Rebuild Note
+
+Both this fork and upstream commit pre-built `static/dist/` files. On every upstream merge that
+touches any `.tsx`/`.ts` file, `static/dist/` conflicts are expected and **always resolved by
+rebuilding**, not by picking one side:
+
+1. For each `static/dist/` conflict: `git checkout --theirs <file>` (take upstream's version)
+2. Complete the merge commit.
+3. `cd frontend && npm run build` — this produces a new `index-<hash>.js` that contains both upstream UI changes and the fork's RGBCCT UI.
+4. Stage the new dist files: `git add static/dist/`; remove old hash-named bundles: `git rm --cached static/dist/assets/index-<old-hash>.js`
+5. Commit with message `build: rebuild frontend dist …`
+
+`sw.js` and `workbox-*.js` may appear as untracked after a merge — this is normal; `git add` them after the rebuild.
 
 ---
 
