@@ -282,8 +282,23 @@ def connect_device(homing=True):
         state.led_controller = None
     # For other cases (e.g., wled without IP), preserve existing controller
 
-    # Show loading effect
-    if state.led_controller:
+    # Determine if LED should be kept off (restore-off mode).
+    # When dw_led_restore_on_startup is True and the saved brightness was 0, the user had
+    # the LEDs off before power loss - keep them off and skip the loading/connected/idle
+    # effects so MQTT can manage state cleanly.
+    # For RGBCCT mode both RGB and white channels must be 0; for standard mode only RGB.
+    if state.dw_led_dual_ws2811_rgbcct:
+        _led_was_off = state.dw_led_brightness == 0 and state.dw_led_white_brightness == 0
+    else:
+        _led_was_off = state.dw_led_brightness == 0
+    _restore_led_off = (
+        state.dw_led_restore_on_startup and
+        state.led_provider == "dw_leds" and
+        _led_was_off
+    )
+
+    # Show loading effect (skip if LEDs were off before power loss)
+    if state.led_controller and not _restore_led_off:
         state.led_controller.effect_loading()
 
     ports = list_serial_ports()
@@ -325,15 +340,21 @@ def connect_device(homing=True):
 
         device_init(homing)
 
-    # Show connected effect, then transition to configured idle effect
+    # Show connected effect, then transition to configured idle effect.
+    # If restoring to an "off" state, skip the effects and explicitly power off so that
+    # subsequent MQTT commands (including retained state from Home Assistant) are obeyed.
     if state.led_controller:
-        logger.info("Showing LED connected effect (green flash)")
-        state.led_controller.effect_connected()
-        # Set the configured idle effect after connection
-        logger.info(f"Setting LED to idle effect: {state.dw_led_idle_effect}")
-        state.led_controller.effect_idle(state.dw_led_idle_effect,
-                                         white_effect_settings=state.dw_led_idle_white_effect)
-        _start_idle_led_timeout()
+        if _restore_led_off:
+            logger.info("Restore-on-startup: LED was off before power loss — keeping LED off")
+            state.led_controller.set_power(0)
+        else:
+            logger.info("Showing LED connected effect (green flash)")
+            state.led_controller.effect_connected()
+            # Set the configured idle effect after connection
+            logger.info(f"Setting LED to idle effect: {state.dw_led_idle_effect}")
+            state.led_controller.effect_idle(state.dw_led_idle_effect,
+                                             white_effect_settings=state.dw_led_idle_white_effect)
+            _start_idle_led_timeout()
 
 def check_and_unlock_alarm():
     """
