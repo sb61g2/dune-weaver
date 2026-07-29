@@ -178,6 +178,16 @@ def test_explicit_client_id_overrides_environment_default():
     assert handler.client_id == "hobby-table"
 
 
+def test_legacy_client_id_is_preserved_when_loading_settings():
+    """Existing broker policies may depend on the former default identity."""
+    from modules.core.state import AppState
+
+    loaded_state = AppState()
+    loaded_state.from_settings_dict({"mqtt_client_id": "dune_weaver"})
+
+    assert loaded_state.mqtt_client_id == "dune_weaver"
+
+
 def test_pattern_selection_passes_configured_clear_pattern():
     handler = _handler()
     run_pattern = MagicMock(return_value=MagicMock())

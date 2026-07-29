@@ -706,11 +706,12 @@ class AppState:
         self.mqtt_port = data.get("mqtt_port", 1883)
         self.mqtt_username = data.get("mqtt_username", "")
         self.mqtt_password = self._decode_mqtt_password(data.get("mqtt_password", ""))
-        # Auto-migrate the legacy literal default — it was never user-configurable
-        # via the UI, so any stored "dune_weaver" is a stale default, not an
-        # explicit choice. Treat it as unset so the handler generates a unique id.
+        # Preserve an existing client ID for broker compatibility. New installs
+        # leave this unset and receive the upstream-generated unique ID, while
+        # established installations may have broker policies tied to the former
+        # "dune_weaver" identity.
         stored_client_id = data.get("mqtt_client_id")
-        self.mqtt_client_id = None if stored_client_id in (None, "", "dune_weaver") else stored_client_id
+        self.mqtt_client_id = stored_client_id or None
         self.mqtt_discovery_prefix = data.get("mqtt_discovery_prefix", "homeassistant")
         self.mqtt_device_id = data.get("mqtt_device_id", "dune_weaver")
         self.mqtt_device_name = data.get("mqtt_device_name", "Dune Weaver")

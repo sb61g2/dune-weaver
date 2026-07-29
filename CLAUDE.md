@@ -307,6 +307,25 @@ its compatibility behavior is covered upstream.
 
 ---
 
+### 11. Preserve Legacy MQTT Client IDs During Upgrade
+**Commit:** added after the v4.1.4 device verification
+**Theme:** Home Assistant upgrade compatibility
+
+Upstream 4.1.4 converted every stored `mqtt_client_id: "dune_weaver"` value to an
+auto-generated ID. The live broker refused that new identity, disconnecting Home
+Assistant immediately after the upgrade. New installations still get upstream's
+unique generated IDs, but existing non-empty IDs—including the former default—are
+now preserved so broker policies continue to work.
+
+**What changed:**
+- `modules/core/state.py` — preserve any non-empty stored MQTT client ID
+- `tests/unit/test_mqtt_handler.py` — regression coverage for the legacy identity
+
+**Upstream merge risk:** LOW. Keep unless upstream adds a one-time migration that
+can distinguish a user-approved identity change from a legacy installation.
+
+---
+
 ## Setup Script Improvements
 **Commits:** `9a95b50`, `11c0a26`
 **Theme:** Installation / ops
