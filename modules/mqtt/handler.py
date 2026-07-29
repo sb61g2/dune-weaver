@@ -225,9 +225,9 @@ class MQTTHandler(BaseMQTTHandler):
             "device": base_device,
             "icon": "mdi:speedometer",
             "mode": "box",
-            "min": 50,
-            "max": 2000,
-            "step": 50
+            "min": 10,
+            "max": 6000,
+            "step": 10
         }
         self._publish_discovery("number", "speed", speed_config)
 
@@ -424,12 +424,10 @@ class MQTTHandler(BaseMQTTHandler):
                 "unique_id": f"{self.device_id}_led_color",
                 "command_topic": self.led_color_topic,
                 "state_topic": f"{self.device_id}/led/color/state",
-                "rgb_command_topic": self.led_color_topic,
-                "rgb_state_topic": f"{self.device_id}/led/color/state",
                 "device": base_device,
                 "icon": "mdi:palette-swatch",
                 "schema": "json",
-                "rgb": True
+                "supported_color_modes": ["rgb"]
             }
             self._publish_discovery("light", "led_color", led_color_config)
 
@@ -662,8 +660,12 @@ class MQTTHandler(BaseMQTTHandler):
                     r = int(color_hex[1:3], 16)
                     g = int(color_hex[3:5], 16)
                     b = int(color_hex[5:7], 16)
+                    color_state = {
+                        "state": power_state,
+                        "color": {"r": r, "g": g, "b": b}
+                    }
                     self.client.publish(f"{self.device_id}/led/color/state",
-                                      json.dumps({"r": r, "g": g, "b": b}), retain=True)
+                                      json.dumps(color_state), retain=True)
 
             # Publish RGBCCT white channel state
             if "white_brightness" in status:
@@ -953,17 +955,27 @@ class MQTTHandler(BaseMQTTHandler):
                         controller.set_intensity(intensity)
                         self.client.publish(f"{self.device_id}/led/intensity/state", intensity, retain=True)
             elif msg.topic == self.led_color_topic:
-                # Handle LED color command (RGB) (DW LEDs only)
+                # Handle Home Assistant JSON light commands. Accept the former
+                # flat RGB payload as well for backward compatibility.
                 try:
                     color_data = json.loads(msg.payload.decode())
-                    if state.led_controller and state.led_provider == "dw_leds" and 'r' in color_data and 'g' in color_data and 'b' in color_data:
+                    if state.led_controller and state.led_provider == "dw_leds":
                         controller = state.led_controller.get_controller()
-                        if controller and hasattr(controller, 'set_color'):
-                            r, g, b = color_data['r'], color_data['g'], color_data['b']
+
+                        power = color_data.get("state", "").upper()
+                        if power == "OFF":
+                            state.led_controller.set_power(0)
+                        elif power == "ON":
+                            state.led_controller.set_power(1)
+
+                        color = color_data.get("color", color_data)
+                        if controller and hasattr(controller, 'set_color') and all(
+                            channel in color for channel in ("r", "g", "b")
+                        ):
+                            r, g, b = color["r"], color["g"], color["b"]
                             controller.set_color(r, g, b)
-                            self.client.publish(f"{self.device_id}/led/color/state",
-                                              json.dumps({"r": r, "g": g, "b": b}), retain=True)
-                except json.JSONDecodeError:
+                        self._publish_led_state()
+                except (json.JSONDecodeError, AttributeError, TypeError):
                     logger.error(f"Invalid JSON for color command: {msg.payload}")
             elif msg.topic == self.led_white_brightness_topic:
                 # Handle white brightness command (RGBCCT DW LEDs only)
