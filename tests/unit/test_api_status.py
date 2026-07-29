@@ -114,6 +114,8 @@ class TestGetAllSettings:
         mock_state.scheduled_pause_finish_pattern = False
         mock_state.scheduled_pause_timezone = None
         mock_state.scheduled_pause_time_slots = []
+        mock_state.scheduled_reboot_enabled = False
+        mock_state.scheduled_reboot_time = "03:00"
         mock_state.homing = 0
         mock_state.homing_user_override = False
         mock_state.angular_homing_offset_degrees = 0.0
@@ -159,6 +161,7 @@ class TestGetAllSettings:
         assert "patterns" in data
         assert "auto_play" in data
         assert "scheduled_pause" in data
+        assert "scheduled_reboot" in data
         assert "homing" in data
         assert "led" in data
         assert "mqtt" in data
@@ -168,6 +171,7 @@ class TestGetAllSettings:
         assert data["app"]["name"] == "Test Table"
         assert data["connection"]["preferred_port"] == "__auto__"
         assert data["patterns"]["clear_pattern_speed"] == 150
+        assert data["scheduled_reboot"] == {"enabled": False, "time": "03:00"}
         assert data["machine"]["detected_table_type"] == "dune_weaver"
 
     @pytest.mark.asyncio
@@ -190,6 +194,8 @@ class TestGetAllSettings:
         mock_state.scheduled_pause_finish_pattern = False
         mock_state.scheduled_pause_timezone = None
         mock_state.scheduled_pause_time_slots = []
+        mock_state.scheduled_reboot_enabled = True
+        mock_state.scheduled_reboot_time = "04:15"
         mock_state.homing = 0
         mock_state.homing_user_override = False
         mock_state.angular_homing_offset_degrees = 0.0
@@ -232,6 +238,43 @@ class TestGetAllSettings:
         assert data["machine"]["detected_table_type"] == "dune_weaver"
         assert data["machine"]["table_type_override"] == "dune_weaver_mini"
         assert data["machine"]["effective_table_type"] == "dune_weaver_mini"
+
+
+class TestUpdateSettings:
+    """Tests for PATCH /api/settings."""
+
+    @pytest.mark.asyncio
+    async def test_update_scheduled_reboot(self, async_client, mock_state):
+        mock_state.scheduled_reboot_enabled = False
+        mock_state.scheduled_reboot_time = "03:00"
+
+        with patch("main.state", mock_state):
+            response = await async_client.patch(
+                "/api/settings",
+                json={"scheduled_reboot": {"enabled": True, "time": "04:15"}},
+            )
+
+        assert response.status_code == 200
+        assert mock_state.scheduled_reboot_enabled is True
+        assert mock_state.scheduled_reboot_time == "04:15"
+        assert "scheduled_reboot" in response.json()["updated_categories"]
+        mock_state.save.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_rejects_invalid_scheduled_reboot_time(
+        self, async_client, mock_state
+    ):
+        mock_state.scheduled_reboot_time = "03:00"
+
+        with patch("main.state", mock_state):
+            response = await async_client.patch(
+                "/api/settings",
+                json={"scheduled_reboot": {"time": "25:99"}},
+            )
+
+        assert response.status_code == 400
+        assert mock_state.scheduled_reboot_time == "03:00"
+        mock_state.save.assert_not_called()
 
 
 class TestGetTableInfo:

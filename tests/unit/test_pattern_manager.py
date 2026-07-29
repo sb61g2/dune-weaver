@@ -457,3 +457,31 @@ class TestPlaylistRunModes:
         executed = await self._run_playlist(mock_state, "loop", stop_after=3)
 
         assert executed == ["a.thr", "b.thr", "a.thr"]
+
+
+class TestPlaylistCadence:
+    """Tests for start-to-start playlist timing."""
+
+    def test_fixed_delay_returns_full_pause(self):
+        from modules.core.pattern_manager import calculate_playlist_pause
+
+        with patch("modules.core.pattern_manager.time.time", return_value=125):
+            pause = calculate_playlist_pause(60, 100, pause_from_start=False)
+
+        assert pause == 60
+
+    def test_cadence_subtracts_pattern_runtime(self):
+        from modules.core.pattern_manager import calculate_playlist_pause
+
+        with patch("modules.core.pattern_manager.time.time", return_value=125):
+            pause = calculate_playlist_pause(60, 100, pause_from_start=True)
+
+        assert pause == 35
+
+    def test_cadence_never_returns_negative_pause(self):
+        from modules.core.pattern_manager import calculate_playlist_pause
+
+        with patch("modules.core.pattern_manager.time.time", return_value=175):
+            pause = calculate_playlist_pause(60, 100, pause_from_start=True)
+
+        assert pause == 0

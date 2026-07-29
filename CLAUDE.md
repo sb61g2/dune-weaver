@@ -267,6 +267,46 @@ equivalent upstream implementation is intentionally adopted and verified.
 
 ---
 
+### 10. Selected Pi-era v4.1.4 Release Features
+**Source commit:** `c4917ac` (`upstream/release/v4.1.4`)
+**Theme:** Reliability and scheduling
+
+The divergent release commit was not merged wholesale because it was built on an
+older pre-`upstream/main` snapshot and duplicates generated assets and MQTT work.
+The still-useful Raspberry Pi features were ported onto the current merged code:
+
+- FluidNC serial corruption errors `170`–`181` are retried like the existing
+  corruption responses.
+- Queue additions retain the full `patterns/` path required by the executor.
+- Playlist timing supports a start-to-start cadence, exposed in the UI as plays
+  per day.
+- An optional daily host reboot can be configured in Settings. It is disabled by
+  default and waits for the current pattern to finish before rebooting.
+- `requirements-nonrpi.txt` explicitly includes PyYAML for FluidNC configuration
+  parsing.
+
+The release commit's MQTT light implementation was intentionally not copied:
+fork commit `3126e87` is newer, has regression coverage, and supports both Home
+Assistant's nested JSON light schema and the fork's legacy flat RGB commands.
+The old release's `VERSION` and generated frontend assets were also not copied;
+the current `upstream/main` 4.1.4 version and a fresh frontend build are used.
+
+**What changed:**
+- `main.py` — scheduled reboot API/monitor, playlist cadence forwarding, queue path
+- `modules/core/pattern_manager.py` — FluidNC retries and cadence calculation
+- `modules/core/playlist_manager.py` — cadence forwarding
+- `modules/core/state.py` — scheduled reboot persistence
+- `frontend/src/pages/PlaylistsPage.tsx` — plays-per-day control
+- `frontend/src/pages/SettingsPage.tsx` — scheduled reboot settings
+- `requirements-nonrpi.txt` — PyYAML dependency
+- `tests/unit/` — settings, queue, cadence, and API forwarding coverage
+
+**Upstream merge risk:** MEDIUM. Remove these downstream copies when equivalent
+features land on `upstream/main`; preserve the fork's MQTT implementation until
+its compatibility behavior is covered upstream.
+
+---
+
 ## Setup Script Improvements
 **Commits:** `9a95b50`, `11c0a26`
 **Theme:** Installation / ops

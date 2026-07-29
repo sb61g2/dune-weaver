@@ -577,6 +577,21 @@ class MotionControlThread:
             'error:21',  # Invalid gcode command value
             'error:22',  # Invalid gcode command value in negative
             'error:23',  # Invalid gcode command value in decimal
+            # FluidNC extended codes (170-181): expression/flow-control parser
+            # errors. We never send expressions or o-codes, so these indicate
+            # a corrupted serial line and are safe to retry.
+            'error:170', # Expression divide by zero
+            'error:171', # Expression invalid argument
+            'error:172', # Expression invalid result
+            'error:173', # Expression unknown op
+            'error:174', # Expression argument out of range
+            'error:175', # Expression syntax error
+            'error:176', # Flow control syntax error
+            'error:177', # Flow control not executing macro
+            'error:178', # Flow control out of memory
+            'error:179', # Flow control stack overflow
+            'error:180', # Parameter assignment failed
+            'error:181', # Gcode value word invalid
         }
 
         while True:
@@ -1516,9 +1531,23 @@ async def run_theta_rho_file(file_path, is_playlist=False, clear_pattern=None, c
                 progress_update_task = None
         else:
             logger.info("Pattern execution completed, maintaining state for playlist")
-            
 
-async def run_theta_rho_files(file_paths, pause_time=0, clear_pattern=None, run_mode="single", shuffle=False):
+
+def calculate_playlist_pause(pause_time, pattern_start_time, pause_from_start=False):
+    """Return the remaining delay for fixed-delay or start-to-start cadence."""
+    if not pause_from_start:
+        return pause_time
+    return max(0, pause_time - (time.time() - pattern_start_time))
+
+
+async def run_theta_rho_files(
+    file_paths,
+    pause_time=0,
+    clear_pattern=None,
+    run_mode="single",
+    shuffle=False,
+    pause_from_start=False,
+):
     """Run multiple .thr files in sequence with options.
 
     The playlist now stores only main patterns. Clear patterns are executed dynamically
@@ -1569,6 +1598,8 @@ async def run_theta_rho_files(file_paths, pause_time=0, clear_pattern=None, run_
             # Execute main patterns using index-based access
             # This allows the playlist to be reordered during execution
             idx = 0
+            # Default in case the inner loop does not run before a repeat-cycle pause.
+            pattern_start_time = time.time()
             while state.current_playlist and idx < len(state.current_playlist):
                 state.current_playlist_index = idx
 
@@ -1583,6 +1614,9 @@ async def run_theta_rho_files(file_paths, pause_time=0, clear_pattern=None, run_
                 # Clear pause state when starting a new pattern (prevents stale "waiting" UI)
                 state.pause_time_remaining = 0
                 state.original_pause_time = None
+
+                # In cadence mode, pauses are measured from the pattern start.
+                pattern_start_time = time.time()
 
                 # Execute the pattern with optional clear pattern
                 await run_theta_rho_file(
@@ -1634,20 +1668,24 @@ async def run_theta_rho_files(file_paths, pause_time=0, clear_pattern=None, run_
                                                                                  white_effect_settings=state.dw_led_playing_white_effect)
                             idle_timeout_manager.cancel_timeout()
 
-                # Handle pause between patterns
-                if state.current_playlist and idx < len(state.current_playlist) - 1 and not state.stop_requested and pause_time > 0 and not state.skip_requested:
-                    logger.info(f"Pausing for {pause_time} seconds")
+                # Handle pause between patterns. In pause_from_start mode the
+                # requested interval is a start-to-start cadence.
+                effective_pause = calculate_playlist_pause(
+                    pause_time, pattern_start_time, pause_from_start
+                )
+                if state.current_playlist and idx < len(state.current_playlist) - 1 and not state.stop_requested and effective_pause > 0 and not state.skip_requested:
+                    logger.info(f"Pausing for {effective_pause:.1f} seconds")
                     # Clear current_playing_file to report "idle" state to MQTT/HA during pause
                     # This will be set again when the next pattern starts
                     state.current_playing_file = None
                     # Trigger idle LED state during pause between patterns
                     await start_idle_led_timeout(check_still_sands=True)
-                    state.original_pause_time = pause_time
+                    state.original_pause_time = effective_pause
                     pause_start = time.time()
                     # Track Still Sands state for edge detection during long pauses
                     was_in_still_sands = is_in_scheduled_pause_period() and state.scheduled_pause_control_wled
-                    while time.time() - pause_start < pause_time:
-                        state.pause_time_remaining = pause_start + pause_time - time.time()
+                    while time.time() - pause_start < effective_pause:
+                        state.pause_time_remaining = pause_start + effective_pause - time.time()
                         if state.skip_requested or state.stop_requested:
                             if state.stop_requested:
                                 logger.info("Pause interrupted by stop request")
@@ -1693,17 +1731,20 @@ async def run_theta_rho_files(file_paths, pause_time=0, clear_pattern=None, run_
 
             if run_mode in ("indefinite", "loop"):
                 logger.info(f"Playlist completed. Restarting as per '{run_mode}' run mode")
-                if pause_time > 0:
+                effective_pause = calculate_playlist_pause(
+                    pause_time, pattern_start_time, pause_from_start
+                )
+                if effective_pause > 0:
                     # Clear current_playing_file to report "idle" state to MQTT/HA during pause
                     state.current_playing_file = None
                     # Trigger idle LED state during pause between playlist cycles
                     await start_idle_led_timeout(check_still_sands=True)
-                    state.original_pause_time = pause_time
+                    state.original_pause_time = effective_pause
                     pause_start = time.time()
                     # Track Still Sands state for edge detection during long pauses
                     was_in_still_sands = is_in_scheduled_pause_period() and state.scheduled_pause_control_wled
-                    while time.time() - pause_start < pause_time:
-                        state.pause_time_remaining = pause_start + pause_time - time.time()
+                    while time.time() - pause_start < effective_pause:
+                        state.pause_time_remaining = pause_start + effective_pause - time.time()
                         if state.skip_requested or state.stop_requested:
                             if state.stop_requested:
                                 logger.info("Pause interrupted by stop request")

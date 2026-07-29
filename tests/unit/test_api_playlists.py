@@ -271,6 +271,67 @@ class TestRunPlaylist:
         data = response.json()
         assert "homing" in data["detail"].lower()
 
+    @pytest.mark.asyncio
+    async def test_run_playlist_forwards_start_to_start_cadence(
+        self, async_client, mock_state
+    ):
+        """The per-day UI option reaches the playlist executor unchanged."""
+        mock_state.is_homing = False
+        mock_state.conn = MagicMock()
+        mock_state.conn.is_connected.return_value = True
+        run_playlist = AsyncMock(return_value=(True, "Started"))
+
+        with patch("main.state", mock_state), \
+             patch("main.os.path.exists", return_value=True), \
+             patch("main.playlist_manager.run_playlist", run_playlist):
+            response = await async_client.post(
+                "/run_playlist",
+                json={
+                    "playlist_name": "daily",
+                    "pause_time": 21600,
+                    "clear_pattern": "adaptive",
+                    "run_mode": "indefinite",
+                    "shuffle": True,
+                    "pause_from_start": True,
+                },
+            )
+
+        assert response.status_code == 200
+        run_playlist.assert_awaited_once_with(
+            "daily",
+            pause_time=21600,
+            clear_pattern="adaptive",
+            run_mode="indefinite",
+            shuffle=True,
+            pause_from_start=True,
+        )
+
+
+class TestAddToQueue:
+    """Tests for adding patterns to the currently running queue."""
+
+    @pytest.mark.asyncio
+    async def test_add_to_queue_uses_executable_pattern_path(
+        self, async_client, mock_state
+    ):
+        """Queued entries use the same full path form as playlist entries."""
+        mock_state.current_playlist = ["./patterns/a.thr"]
+        mock_state.current_playlist_index = 0
+
+        with patch("main.state", mock_state), \
+             patch("main.pattern_manager.THETA_RHO_DIR", "./patterns"), \
+             patch("main.os.path.exists", return_value=True):
+            response = await async_client.post(
+                "/add_to_queue",
+                json={"pattern": "nested/b.thr", "position": "next"},
+            )
+
+        assert response.status_code == 200
+        assert mock_state.current_playlist == [
+            "./patterns/a.thr",
+            "./patterns/nested/b.thr",
+        ]
+
 
 class TestSkipPattern:
     """Tests for /skip_pattern endpoint."""
