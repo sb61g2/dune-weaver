@@ -2,7 +2,7 @@
 
 This is a **personal fork** of [tuanchris/dune-weaver](https://github.com/tuanchris/dune-weaver).
 Upstream is tracked as the `upstream` remote. The last merged upstream release is **v4.1.4**
-(merge commit created from upstream `7ddb7f6`).
+(merge commit `2d112c2`, from upstream `7ddb7f6`).
 
 ## How to Merge a New Upstream Release
 
