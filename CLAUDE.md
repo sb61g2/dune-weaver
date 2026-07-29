@@ -1,8 +1,8 @@
 # CLAUDE.md — Fork Maintenance Guide
 
 This is a **personal fork** of [tuanchris/dune-weaver](https://github.com/tuanchris/dune-weaver).
-Upstream is tracked as the `upstream` remote. The last merged upstream release is **v4.1.3**
-(merge commit `2af1263`).
+Upstream is tracked as the `upstream` remote. The last merged upstream release is **v4.1.4**
+(merge commit created from upstream `7ddb7f6`).
 
 ## How to Merge a New Upstream Release
 
@@ -244,6 +244,26 @@ and `effect_idle()` — all of which force `_powered_on = True`. This had two ef
 
 **Upstream merge risk:** MEDIUM. If upstream changes the post-connection LED block in
 `connect_device()`, re-apply this guard around the effects.
+
+---
+
+### 9. Home Assistant Discovery and JSON Light Alignment
+**Commit:** `3126e87`
+**Theme:** Home Assistant integration and MQTT compatibility
+
+Aligns Home Assistant discovery and state payloads with the application and HA's JSON
+light schema:
+
+- Speed discovery uses the application's full 10–6000 range with a step of 10.
+- The RGB light declares `supported_color_modes: ["rgb"]`.
+- RGB state uses a nested `{state, color}` JSON payload.
+- RGB commands accept HA JSON light power/color commands while retaining compatibility
+  with the former flat RGB payload.
+- `tests/unit/test_mqtt_handler.py` covers discovery, state, and command behavior.
+
+**Upstream merge risk:** MEDIUM. Upstream's divergent `release/v4.1.4` branch contains
+a similar MQTT light fix, but upstream `main` does not. Preserve this patch unless the
+equivalent upstream implementation is intentionally adopted and verified.
 
 ---
 

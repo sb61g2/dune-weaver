@@ -7,9 +7,8 @@ Tests the core pattern file operations:
 - Error handling for invalid files
 - Listing pattern files
 """
-import os
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import AsyncMock, patch
 
 
 class TestParseTheTaRhoFile:
@@ -316,6 +315,61 @@ class TestGetStatus:
         assert status["playlist"]["name"] == "test_playlist"
 
 
+class TestPlaylistShuffle:
+    """Tests for playlist shuffle behavior in run_theta_rho_files."""
+
+    async def test_shuffle_reshuffles_on_each_repeat_cycle(self, mock_state):
+        """With shuffle enabled, a repeating playlist must re-shuffle every
+        cycle instead of replaying the first random order forever."""
+        playlist = ["a.thr", "b.thr"]
+        executed = []
+        shuffle_calls = []
+
+        async def fake_run_pattern(file_path, **kwargs):
+            executed.append(file_path)
+            if len(executed) >= 3:
+                mock_state.stop_requested = True
+
+        with patch("modules.core.pattern_manager.state", mock_state), \
+             patch("modules.core.pattern_manager.run_theta_rho_file",
+                   AsyncMock(side_effect=fake_run_pattern)), \
+             patch("modules.core.pattern_manager.broadcast_progress", AsyncMock()), \
+             patch("modules.core.pattern_manager.start_idle_led_timeout", AsyncMock()), \
+             patch("modules.core.pattern_manager.random.shuffle",
+                   side_effect=lambda seq: shuffle_calls.append(list(seq))):
+            from modules.core.pattern_manager import run_theta_rho_files
+
+            await run_theta_rho_files(playlist, run_mode="indefinite", shuffle=True)
+
+        # The playlist restarted once (3 patterns executed from a 2-pattern
+        # playlist), so it must have been shuffled twice: once per cycle.
+        assert len(executed) == 3
+        assert len(shuffle_calls) == 2
+
+    async def test_no_shuffle_preserves_order(self, mock_state):
+        """Without shuffle, the playlist order is never touched."""
+        playlist = ["a.thr", "b.thr"]
+        executed = []
+        shuffle_calls = []
+
+        async def fake_run_pattern(file_path, **kwargs):
+            executed.append(file_path)
+
+        with patch("modules.core.pattern_manager.state", mock_state), \
+             patch("modules.core.pattern_manager.run_theta_rho_file",
+                   AsyncMock(side_effect=fake_run_pattern)), \
+             patch("modules.core.pattern_manager.broadcast_progress", AsyncMock()), \
+             patch("modules.core.pattern_manager.start_idle_led_timeout", AsyncMock()), \
+             patch("modules.core.pattern_manager.random.shuffle",
+                   side_effect=lambda seq: shuffle_calls.append(list(seq))):
+            from modules.core.pattern_manager import run_theta_rho_files
+
+            await run_theta_rho_files(playlist, run_mode="single", shuffle=False)
+
+        assert executed == ["a.thr", "b.thr"]
+        assert shuffle_calls == []
+
+
 class TestIsClearPattern:
     """Tests for is_clear_pattern function."""
 
@@ -350,3 +404,56 @@ class TestIsClearPattern:
         assert is_clear_pattern("./patterns/circle.thr") is False
         assert is_clear_pattern("./patterns/spiral.thr") is False
         assert is_clear_pattern("./patterns/custom/my_pattern.thr") is False
+
+
+class TestPlaylistRunModes:
+    """Tests for run_theta_rho_files repeat behavior.
+
+    The manual "Run Playlist" dialog sends run_mode="indefinite", while
+    auto-play and MQTT send run_mode="loop". Both must repeat the playlist;
+    "single" must stop after one pass.
+    """
+
+    PLAYLIST = ["a.thr", "b.thr"]
+
+    async def _run_playlist(self, mock_state, run_mode, stop_after):
+        """Run a playlist with a stubbed pattern executor.
+
+        Requests a stop once the executor has run stop_after patterns (so
+        repeat modes can't spin forever), then returns the executed files.
+        """
+        executed = []
+
+        async def fake_run_pattern(file_path, **kwargs):
+            executed.append(file_path)
+            if len(executed) >= stop_after:
+                mock_state.stop_requested = True
+
+        with patch("modules.core.pattern_manager.state", mock_state), \
+             patch("modules.core.pattern_manager.run_theta_rho_file",
+                   AsyncMock(side_effect=fake_run_pattern)), \
+             patch("modules.core.pattern_manager.broadcast_progress", AsyncMock()), \
+             patch("modules.core.pattern_manager.start_idle_led_timeout", AsyncMock()):
+            from modules.core.pattern_manager import run_theta_rho_files
+
+            await run_theta_rho_files(list(self.PLAYLIST), run_mode=run_mode)
+
+        return executed
+
+    async def test_run_mode_single_stops_after_one_pass(self, mock_state):
+        """A "single" playlist runs each pattern once and completes."""
+        executed = await self._run_playlist(mock_state, "single", stop_after=10)
+
+        assert executed == ["a.thr", "b.thr"]
+
+    async def test_run_mode_indefinite_restarts_playlist(self, mock_state):
+        """An "indefinite" playlist restarts after the last pattern."""
+        executed = await self._run_playlist(mock_state, "indefinite", stop_after=3)
+
+        assert executed == ["a.thr", "b.thr", "a.thr"]
+
+    async def test_run_mode_loop_restarts_playlist(self, mock_state):
+        """A "loop" playlist (auto-play/MQTT) restarts after the last pattern."""
+        executed = await self._run_playlist(mock_state, "loop", stop_after=3)
+
+        assert executed == ["a.thr", "b.thr", "a.thr"]

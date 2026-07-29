@@ -3,6 +3,7 @@ import os
 import threading
 import time
 import json
+import uuid
 from typing import Dict, Callable
 import paho.mqtt.client as mqtt
 import logging
@@ -25,7 +26,6 @@ class MQTTHandler(BaseMQTTHandler):
         self.port = state.mqtt_port if state.mqtt_port else int(os.getenv('MQTT_PORT', '1883'))
         self.username = state.mqtt_username if state.mqtt_username else os.getenv('MQTT_USERNAME')
         self.password = state.mqtt_password if state.mqtt_password else os.getenv('MQTT_PASSWORD')
-        self.client_id = state.mqtt_client_id if state.mqtt_client_id else os.getenv('MQTT_CLIENT_ID', 'dune_weaver')
         self.status_topic = os.getenv('MQTT_STATUS_TOPIC', 'dune_weaver/status')
         self.command_topic = os.getenv('MQTT_COMMAND_TOPIC', 'dune_weaver/command')
         self.status_interval = int(os.getenv('MQTT_STATUS_INTERVAL', '30'))
@@ -41,7 +41,17 @@ class MQTTHandler(BaseMQTTHandler):
         self.discovery_prefix = state.mqtt_discovery_prefix if state.mqtt_discovery_prefix else os.getenv('MQTT_DISCOVERY_PREFIX', 'homeassistant')
         self.device_name = state.mqtt_device_name if state.mqtt_device_name else os.getenv('HA_DEVICE_NAME', 'Dune Weaver')
         self.device_id = state.mqtt_device_id if state.mqtt_device_id else os.getenv('HA_DEVICE_ID', 'dune_weaver')
-        
+
+        # MQTT broker-level client identity. If the user hasn't set one explicitly,
+        # generate a random suffix so two instances can never collide on the same
+        # client_id and kick each other off the broker in a reconnect loop. The
+        # device_id prefix keeps the random ID greppable in broker logs.
+        self.client_id = (
+            state.mqtt_client_id
+            or os.getenv('MQTT_CLIENT_ID')
+            or f"{self.device_id}-{uuid.uuid4().hex[:8]}"
+        )
+
         # Additional topics for state
         self.running_state_topic = f"{self.device_id}/state/running"
         self.serial_state_topic = f"{self.device_id}/state/serial"
@@ -734,7 +744,7 @@ class MQTTHandler(BaseMQTTHandler):
         """Callback when connected to MQTT broker."""
         if rc == 0:
             self._connected = True
-            logger.info("MQTT Connection Accepted.")
+            logger.info(f"MQTT Connection Accepted. client_id={self.client_id}")
             # Subscribe to command topics
             client.subscribe([
                 (self.command_topic, 0),
@@ -783,7 +793,18 @@ class MQTTHandler(BaseMQTTHandler):
         if rc == 0:
             logger.info("MQTT disconnected cleanly")
         else:
-            logger.warning(f"MQTT disconnected unexpectedly with code: {rc}")
+            # paho-mqtt MQTT_ERR_* codes — NOT broker CONNACK codes
+            err_names = {
+                1: "NOMEM", 2: "PROTOCOL", 3: "INVAL", 4: "NO_CONN",
+                5: "CONN_REFUSED", 6: "NOT_FOUND", 7: "CONN_LOST",
+                8: "TLS", 9: "PAYLOAD_SIZE", 10: "NOT_SUPPORTED",
+                11: "AUTH", 12: "ACL_DENIED", 13: "UNKNOWN", 14: "ERRNO",
+            }
+            err_name = err_names.get(rc, f"rc={rc}")
+            logger.warning(
+                f"MQTT disconnected unexpectedly: {err_name} (rc={rc}) "
+                f"client_id={self.client_id}"
+            )
 
     def on_message(self, client, userdata, msg):
         """Callback when message is received."""
@@ -795,7 +816,10 @@ class MQTTHandler(BaseMQTTHandler):
                 if pattern_name in self.patterns:
                     # Schedule the coroutine to run in the main event loop
                     asyncio.run_coroutine_threadsafe(
-                        self.callback_registry['run_pattern'](file_path=f"{THETA_RHO_DIR}/{pattern_name}"),
+                        self.callback_registry['run_pattern'](
+                            file_path=f"{THETA_RHO_DIR}/{pattern_name}",
+                            clear_pattern=self.state.clear_pattern,
+                        ),
                         self.main_loop
                     ).add_done_callback(
                         lambda _: self._publish_pattern_state(None)  # Clear pattern after execution

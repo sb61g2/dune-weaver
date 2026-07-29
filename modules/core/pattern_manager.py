@@ -1542,11 +1542,6 @@ async def run_theta_rho_files(file_paths, pause_time=0, clear_pattern=None, run_
     if not progress_update_task:
         progress_update_task = asyncio.create_task(broadcast_progress())
 
-    # Shuffle main patterns if requested (before starting)
-    if shuffle:
-        random.shuffle(file_paths)
-        logger.info("Playlist shuffled")
-
     # Store patterns in state only if not already set by caller.
     # The caller (playlist_manager.run_playlist) sets this before creating the task.
     if state.current_playlist is None:
@@ -1554,6 +1549,13 @@ async def run_theta_rho_files(file_paths, pause_time=0, clear_pattern=None, run_
 
     try:
         while True:
+            # Shuffle main patterns if requested. Re-shuffle at the start of
+            # every cycle so repeat modes play a fresh order each pass instead
+            # of replaying the first random order forever.
+            if shuffle and state.current_playlist:
+                random.shuffle(state.current_playlist)
+                logger.info("Playlist shuffled")
+
             # Load metadata cache once per playlist iteration (for adaptive clear patterns)
             cache_data = None
             if clear_pattern and clear_pattern in ['adaptive', 'clear_from_in', 'clear_from_out']:
@@ -1689,8 +1691,8 @@ async def run_theta_rho_files(file_paths, pause_time=0, clear_pattern=None, run_
                 state.skip_requested = False
                 idx += 1
 
-            if run_mode == "indefinite":
-                logger.info("Playlist completed. Restarting as per 'indefinite' run mode")
+            if run_mode in ("indefinite", "loop"):
+                logger.info(f"Playlist completed. Restarting as per '{run_mode}' run mode")
                 if pause_time > 0:
                     # Clear current_playing_file to report "idle" state to MQTT/HA during pause
                     state.current_playing_file = None

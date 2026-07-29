@@ -64,6 +64,12 @@ def test_discovery_matches_application_speed_range_and_json_light_schema():
     assert "rgb_state_topic" not in led_color
     assert "rgb_command_topic" not in led_color
 
+    home = configs[("button", "home")]
+    assert home["command_topic"] == f"{handler.device_id}/command/home"
+
+    clear = configs[("button", "clear")]
+    assert clear["command_topic"] == f"{handler.device_id}/command/clear"
+
 
 def test_led_state_uses_home_assistant_json_light_payload():
     handler = _handler()
@@ -121,3 +127,105 @@ def test_led_command_accepts_home_assistant_json_light_payload():
 
     led_controller.set_power.assert_called_once_with(1)
     controller.set_color.assert_called_once_with(10, 20, 30)
+
+
+def test_client_id_defaults_to_unique_device_prefixed_value():
+    mock_state = SimpleNamespace(
+        mqtt_broker=None,
+        mqtt_port=1883,
+        mqtt_username="",
+        mqtt_password="",
+        mqtt_discovery_prefix="homeassistant",
+        mqtt_device_name="Dune Weaver Mini Pro",
+        mqtt_device_id="dune_weaver_mini_pro",
+        mqtt_client_id=None,
+        mqtt_handler=None,
+    )
+
+    with (
+        patch("modules.mqtt.handler.state", mock_state),
+        patch.dict("modules.mqtt.handler.os.environ", {"MQTT_CLIENT_ID": ""}),
+        patch("modules.mqtt.handler.asyncio.get_event_loop", return_value=MagicMock()),
+    ):
+        first = MQTTHandler({})
+        second = MQTTHandler({})
+
+    assert first.client_id.startswith("dune_weaver_mini_pro-")
+    assert second.client_id.startswith("dune_weaver_mini_pro-")
+    assert first.client_id != second.client_id
+
+
+def test_explicit_client_id_overrides_environment_default():
+    mock_state = SimpleNamespace(
+        mqtt_broker=None,
+        mqtt_port=1883,
+        mqtt_username="",
+        mqtt_password="",
+        mqtt_discovery_prefix="homeassistant",
+        mqtt_device_name="Dune Weaver Mini Pro",
+        mqtt_device_id="dune_weaver_mini_pro",
+        mqtt_client_id="hobby-table",
+        mqtt_handler=None,
+    )
+
+    with (
+        patch("modules.mqtt.handler.state", mock_state),
+        patch.dict("modules.mqtt.handler.os.environ", {"MQTT_CLIENT_ID": "environment-table"}),
+        patch("modules.mqtt.handler.asyncio.get_event_loop", return_value=MagicMock()),
+    ):
+        handler = MQTTHandler({})
+
+    assert handler.client_id == "hobby-table"
+
+
+def test_pattern_selection_passes_configured_clear_pattern():
+    handler = _handler()
+    run_pattern = MagicMock(return_value=MagicMock())
+    handler.callback_registry = {"run_pattern": run_pattern}
+    handler.patterns = ["spiral.thr"]
+    handler.state = SimpleNamespace(clear_pattern="adaptive")
+    handler.main_loop = MagicMock()
+    message = SimpleNamespace(
+        topic=handler.pattern_select_topic,
+        payload=b"spiral.thr",
+    )
+
+    with patch("modules.mqtt.handler.asyncio.run_coroutine_threadsafe") as schedule:
+        schedule.return_value.add_done_callback = MagicMock()
+        handler.on_message(None, None, message)
+
+    run_pattern.assert_called_once_with(
+        file_path="./patterns/spiral.thr",
+        clear_pattern="adaptive",
+    )
+
+
+def test_home_and_clear_commands_remain_available():
+    handler = _handler()
+    home = MagicMock()
+    clear = MagicMock()
+    handler.callback_registry = {"home": home, "clear": clear}
+    handler.state = SimpleNamespace(
+        conn=SimpleNamespace(is_connected=MagicMock(return_value=True)),
+        is_homing=False,
+    )
+
+    handler.on_message(
+        None,
+        None,
+        SimpleNamespace(
+            topic=f"{handler.device_id}/command/home",
+            payload=b"",
+        ),
+    )
+    handler.on_message(
+        None,
+        None,
+        SimpleNamespace(
+            topic=f"{handler.device_id}/command/clear",
+            payload=b"",
+        ),
+    )
+
+    home.assert_called_once_with()
+    clear.assert_called_once_with()
